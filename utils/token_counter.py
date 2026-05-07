@@ -28,6 +28,41 @@ class TokenCounter:
         self._dirty: Dict[str, bool] = {}
         self._save_task: Optional[asyncio.Task] = None
         self._running = False
+        # 群名持久化
+        self._group_names: Dict[str, str] = {}  # group_id -> group_name
+        self._names_file = self.data_dir / "group_names.json"
+        self._load_group_names()
+        self._names_dirty = False
+    
+    def _load_group_names(self):
+        """从磁盘加载群名缓存"""
+        if self._names_file.exists():
+            try:
+                with open(str(self._names_file), 'r', encoding='utf-8') as f:
+                    self._group_names = json.load(f)
+            except (json.JSONDecodeError, IOError):
+                self._group_names = {}
+    
+    def _save_group_names(self):
+        """持久化群名到磁盘"""
+        try:
+            with open(str(self._names_file), 'w', encoding='utf-8') as f:
+                json.dump(self._group_names, f, ensure_ascii=False, indent=2)
+        except IOError as e:
+            logger.error(f"保存群名失败: {e}")
+    
+    def set_group_name(self, group_id: str, group_name: str):
+        """更新群名（直接覆盖旧名）"""
+        if not group_name:
+            return
+        old = self._group_names.get(group_id)
+        if old != group_name:
+            self._group_names[group_id] = group_name
+            self._names_dirty = True
+    
+    def get_group_name(self, group_id: str) -> str:
+        """获取缓存中的群名，若无则返回群{id}"""
+        return self._group_names.get(group_id, f"群{group_id}")
     
     def _get_file(self, group_id: str) -> Path:
         return self.data_dir / f"{group_id}.json"
@@ -136,7 +171,7 @@ class TokenCounter:
                 self._save(gid)
             daily = await self.get_daily(gid, days_count)
             if any(d["total"] > 0 for d in daily):
-                groups.append({"group_id": gid, "daily": daily})
+                groups.append({"group_id": gid, "group_name": self.get_group_name(gid), "daily": daily})
         # 按总 token 排序
         groups.sort(key=lambda g: sum(d["total"] for d in g["daily"]), reverse=True)
         return groups
@@ -148,6 +183,7 @@ class TokenCounter:
             gid = fp.stem
             stats = await self.get_group_stats(gid, period)
             if stats["total"] > 0:
+                stats["group_name"] = self.get_group_name(gid)
                 groups.append(stats)
         groups.sort(key=lambda x: x["total"], reverse=True)
         return groups
@@ -169,6 +205,9 @@ class TokenCounter:
         for gid in list(self._dirty.keys()):
             if self._dirty.get(gid):
                 self._save(gid)
+        if self._names_dirty:
+            self._save_group_names()
+            self._names_dirty = False
     
     def start(self):
         if self._save_task and not self._save_task.done():

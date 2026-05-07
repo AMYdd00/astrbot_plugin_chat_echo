@@ -330,6 +330,14 @@ class EchoPlugin(Star):
         group_id = str(event.get_group_id())
         now = time.time()
 
+        # 捕获群名
+        try:
+            gname = getattr(event, 'group_name', None) or getattr(event.get_sender(), 'group_name', None) or ""
+            if gname:
+                self.token_counter.set_group_name(group_id, gname)
+        except Exception:
+            pass
+
         # 跳过 Bot 自己
         try:
             self_id = event.get_self_id()
@@ -554,23 +562,17 @@ class EchoPlugin(Star):
         group_id = None
         if umo:
             try:
-                # 从 umo 提取群 ID
                 group_id = umo.rsplit(":", 1)[-1]
             except Exception:
                 pass
         if group_id:
             prompt_tokens = 0
             completion_tokens = 0
-            # 从 resp.usage 提取 token 计数
-            # LLMResponse.usage 是 TokenUsage 类型：
-            #   usage.input  = input_other + input_cached (输入 token 总数)
-            #   usage.output = 输出 token 数
             if hasattr(resp, 'usage') and resp.usage:
                 prompt_tokens = getattr(resp.usage, 'input', 0) or 0
                 completion_tokens = getattr(resp.usage, 'output', 0) or 0
             if prompt_tokens > 0 or completion_tokens > 0:
                 await self.token_counter.record(group_id, prompt_tokens, completion_tokens)
-                self.logger.debug(f"[Token] 群 {group_id} +{prompt_tokens}p/{completion_tokens}c")
 
         if hasattr(resp, "completion_text"):
             text = resp.completion_text
