@@ -33,73 +33,38 @@
 
 ## 配置说明
 
-### 基础配置
-
 | 配置项 | 类型 | 默认值 | 说明 |
 |--------|------|--------|------|
 | `trigger_mode` | string | `llm_response` | 触发模式：`llm_response`（仅 LLM 回复后监听）/ `any_message`（任何消息后监听） |
-
-### Provider 配置
-
-| 配置项 | 说明 |
-|--------|------|
-| `analyzer_provider_id` | 分析用 LLM Provider（建议用便宜的模型如 GPT-4o-mini）。留空则使用会话的默认 Provider |
-| `generator_provider_id` | 生成用 LLM Provider（建议用质量高的模型如 GPT-4.1）。留空则使用会话的默认 Provider |
-
-### 跟踪与检测
-
-| 配置项 | 类型 | 默认值 | 说明 |
-|--------|------|--------|------|
-| `track_timeout_seconds` | int | `120` | 跟踪窗口（秒）。群聊沉默超过此时间即停止本轮监听。范围 10~600 |
-| `max_detection_count` | int | `10` | 最多分析多少条群友发言后停止本轮。与跟踪窗口是「或」关系，任一先触发则停止 |
-
-### 概率控制
-
-| 配置项 | 类型 | 默认值 | 说明 |
-|--------|------|--------|------|
+| `analyzer_provider_id` | string | 空 | 分析用 LLM Provider（建议便宜的模型如 GPT-4o-mini）。留空使用会话默认 |
+| `generator_provider_id` | string | 空 | 生成用 LLM Provider（建议高质量模型如 GPT-4.1）。留空使用会话默认 |
+| `track_timeout_seconds` | int | `120` | 跟踪窗口(秒)。群聊沉默超时即停止，范围 10~600 |
+| `max_detection_count` | int | `10` | 最多分析多少条群友发言后停止本轮，范围 1~50 |
 | `reply_probability` | int | `100` | 回复模式分析概率(%)。100=每条都分析，50=一半概率 |
-| `active_probability` | int | `0` | 主动模式参与概率(%)。0=关闭主动模式，100=每条都参与分析 |
-| `active_interval_minutes` | int | `30` | 主动模式最小间隔(分钟)。防止主动参与过于频繁 |
+| `active_probability` | int | `0` | 主动模式参与概率(%)。0=关闭，100=每条都可能触发 |
+| `active_interval_minutes` | int | `30` | 主动模式最小间隔(分钟)，范围 1~480 |
+| `max_proactive_rounds` | int | `3` | 最大连续主动回复轮数，1=只接话一次，范围 1~10 |
+| `proactive_cooldown_seconds` | int | `300` | 主动发言冷却(秒)，范围 30~3600 |
+| `enabled_groups` | list | `[]` | 群白名单（见下方说明）。留空则所有群生效 |
+| `analyzer_system_prompt` | text | 默认提示词 | 回复分析 LLM 提示词，用于判断群友消息是否在回复 Bot |
+| `proactive_analyzer_system_prompt` | text | 默认提示词 | 主动分析 LLM 提示词，用于判断 Bot 是否应主动参与讨论 |
+| `generator_system_prompt` | text | 默认提示词 | 回复生成 LLM 提示词，控制 Bot 回复风格和语气 |
 
-### 群白名单
-
-通过 `enabled_groups` 配置。
+### 群白名单 (`enabled_groups`)
 
 **格式：`群标识:【Bot发言后发给LLM分析要不要回复的概率】:【主动随机发给LLM分析要不要参与聊天的概率】`**
 
-可留空某个值，如 `群ID::30` 表示只设主动概率、回复概率用全局值。
-
-UMO格式也支持：`Bot:GroupMessage:群ID`
+可留空某个值，如 `群ID::30` 表示只设主动概率、回复概率用全局值。UMO格式也支持：`Bot:GroupMessage:群ID`
 
 示例：
 ```json
 ["-100123456:80:30", "Bot:GroupMessage:-100789012:50"]
 ```
-
 - `"-100123456:80:30"` — 群号`-100123456`，回复概率80%，主动概率30%
 - `"-100789012:50"` — 群号`-100789012`，回复概率50%，主动概率用全局值
 - `"-100123456::30"` — 群号`-100123456`，回复概率用全局值，主动概率30%
 - `"Bot:GroupMessage:-100789012:50"` — UMO格式（Bot:GroupMessage:群ID），回复概率50%
 - `"-100789012"` — 仅白名单，两个概率都用全局值
-
-> 留空则所有群使用全局概率。
-
-### 其他
-
-| 配置项 | 类型 | 默认值 | 说明 |
-|--------|------|--------|------|
-| `max_proactive_rounds` | int | `3` | 最大连续主动回复轮数。Bot 回复后自动开启新一轮监听，1 表示只接话一次不继续 |
-| `proactive_cooldown_seconds` | int | `300` | 主动发言冷却(秒)。每次主动发言后需等待多久才能再次在该群触发新的跟踪窗口 |
-
-### 自定义提示词
-
-支持自定义以下 LLM 提示词，可通过 AstrBot WebUI 配置界面编辑：
-
-| 配置项 | 说明 | 默认用途 |
-|--------|------|----------|
-| `analyzer_system_prompt` | 回复分析提示词 | 判断群友消息是否在回复 Bot |
-| `proactive_analyzer_system_prompt` | 主动分析提示词 | 判断 Bot 是否应该主动参与讨论 |
-| `generator_system_prompt` | 回复生成提示词 | 生成 Bot 的自然回复内容 |
 
 ## 安装
 
