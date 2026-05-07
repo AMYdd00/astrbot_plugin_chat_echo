@@ -11,4 +11,11 @@ support_platforms:
   - telegram
   - discord
   - lark
-  - webchat
+  - qq_official
+  - wechat
+  - dingtalk
+  - kook
+  - slack
+  - mattermost
+  - satori
+  - vochat
