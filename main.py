@@ -1,13 +1,30 @@
 """
-AstrBot 主动接话插件
+AstrBot 主动接话插件 (astrbot_plugin_chat_echo)
 
 功能：
 Bot 发出消息后，自动监听后续群友的回复，使用 LLM 分析是否在跟 Bot 说话，
 如果是，则使用 LLM 生成自然回复并主动发言。
 
 双模式：
-- 回复模式：Bot发言后跟踪窗口内群友消息，按概率分析是否回复Bot
-- 主动模式：Bot没发言时，按概率随机抽取消息分析话题并主动参与讨论
+- 回复模式（Route 1）：Bot 发言后跟踪窗口内群友消息，按概率分析是否回复 Bot
+- 主动模式（Route 2）：Bot 没发言时，按概率随机抽取消息分析话题并主动参与讨论
+
+工作流程：
+1. Route 1 - 回复模式:
+   Bot 发言 → @on_llm_response() / @after_message_sent() 触发跟踪窗口
+   → @on_group_message() 收集群友消息 → LLM 分析是否回复 Bot
+   → 是 → LLM 生成回复 → Bot 主动发言（可多轮，最多 max_proactive_rounds 次）
+
+2. Route 2 - 主动模式:
+   @on_group_message() 随机消息 → 概率命中 → LLM 分析是否应参与
+   → 是 → LLM 生成发言 → Bot 主动发言
+
+安全机制：
+- 双路线互斥锁（_active_thinking / _proactive_flag）
+- 群级别冷却（_cooldowns / _active_cooldowns）
+- 检测次数上限（max_detection_count）和超时窗口（track_timeout_seconds）
+
+配置项详见 _conf_schema.json
 """
 
 import asyncio
@@ -137,9 +154,6 @@ class EchoPlugin(Star):
         if isinstance(self.config, dict):
             return self.config.get(key, default)
         return getattr(self.config, key, default)
-
-    def _is_enabled(self) -> bool:
-        return bool(self._cfg("proactive_enabled", False))
 
     def _trigger_mode(self) -> str:
         return str(self._cfg("trigger_mode", "llm_response"))
@@ -277,7 +291,7 @@ class EchoPlugin(Star):
 
     @filter.on_llm_response()
     async def on_llm_response(self, event: AstrMessageEvent, response):
-        if not self._is_enabled() or self._proactive_flag:
+        if self._proactive_flag:
             return
         if not self._is_group_event(event) or not self._is_group_allowed(event):
             return
@@ -295,7 +309,7 @@ class EchoPlugin(Star):
 
     @filter.after_message_sent()
     async def on_after_message_sent(self, event: AstrMessageEvent):
-        if not self._is_enabled() or self._proactive_flag:
+        if self._proactive_flag:
             return
         if not self._is_group_event(event) or not self._is_group_allowed(event):
             return
@@ -334,7 +348,7 @@ class EchoPlugin(Star):
 
     @filter.event_message_type(EventMessageType.ALL)
     async def on_group_message(self, event: AstrMessageEvent):
-        if not self._is_enabled() or not self._is_group_event(event):
+        if not self._is_group_event(event):
             return
         if not self._is_group_allowed(event):
             return
