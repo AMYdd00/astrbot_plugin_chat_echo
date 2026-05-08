@@ -259,7 +259,7 @@ class EchoPlugin(Star):
 
     # ======================== 触发跟踪 ========================
 
-    def _start_tracking(self, event: AstrMessageEvent, bot_message: str = ""):
+    async def _start_tracking(self, event: AstrMessageEvent, bot_message: str = ""):
         group_id = str(event.get_group_id())
         unified_msg_origin = event.unified_msg_origin
         sender_name = event.get_sender_name()
@@ -272,7 +272,7 @@ class EchoPlugin(Star):
             return
         # 捕获群名
         try:
-            g = event.get_group()
+            g = await event.get_group()
             gname = g.group_name if g else ""
         except Exception:
             gname = ""
@@ -292,6 +292,7 @@ class EchoPlugin(Star):
 
     @filter.on_llm_response()
     async def on_llm_response(self, event: AstrMessageEvent, response):
+        """Bot LLM 回复后触发，开始跟踪群友后续回复"""
         if self._proactive_flag:
             return
         if not self._is_group_event(event) or not self._is_group_allowed(event):
@@ -304,12 +305,13 @@ class EchoPlugin(Star):
         elif isinstance(response, str):
             bot_text = response
         if self._trigger_mode() in ("llm_response", "any_message"):
-            self._start_tracking(event, bot_text)
+            await self._start_tracking(event, bot_text)
 
     # ======================== 事件：消息发送后 ========================
 
     @filter.after_message_sent()
     async def on_after_message_sent(self, event: AstrMessageEvent):
+        """Bot 发送消息后触发，开始跟踪群友后续回复（仅 trigger_mode=any_message 时）"""
         if self._proactive_flag:
             return
         if not self._is_group_event(event) or not self._is_group_allowed(event):
@@ -327,7 +329,7 @@ class EchoPlugin(Star):
                         bot_text += comp.content or ""
         except Exception:
             pass
-        self._start_tracking(event, bot_text)
+        await self._start_tracking(event, bot_text)
 
     # ======================== 双路线入口 ========================
 
@@ -349,6 +351,7 @@ class EchoPlugin(Star):
 
     @filter.event_message_type(EventMessageType.ALL)
     async def on_group_message(self, event: AstrMessageEvent):
+        """监听所有群消息，收集回复并判断是否需要主动接话或参与讨论"""
         if not self._is_group_event(event):
             return
         if not self._is_group_allowed(event):
@@ -464,7 +467,7 @@ class EchoPlugin(Star):
         try:
             # 捕获群名
             try:
-                g = event.get_group()
+                g = await event.get_group()
                 gname = g.group_name if g else ""
                 if gname:
                     self.token_counter.set_group_name(group_id, gname)
