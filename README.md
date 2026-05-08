@@ -128,25 +128,6 @@ Bot 发言 → 开始跟踪窗口 → 群友回复 → LLM 分析是否回复 Bo
 
 - [AMYdd00](https://github.com/AMYdd00)
 
----
-
 <div align="center">
-  <a href="https://github.com/AMYdd00/astrbot_plugin_chat_echo/stargazers">
-    <img src="https://img.shields.io/github/stars/AMYdd00/astrbot_plugin_chat_echo?style=flat&logo=github&label=Stars" alt="Stars"/>
-  </a>
-  <a href="https://github.com/AMYdd00/astrbot_plugin_chat_echo/forks">
-    <img src="https://img.shields.io/github/forks/AMYdd00/astrbot_plugin_chat_echo?style=flat&logo=github&label=Forks" alt="Forks"/>
-  </a>
-  <a href="https://github.com/AMYdd00/astrbot_plugin_chat_echo/releases">
-    <img src="https://img.shields.io/github/release/AMYdd00/astrbot_plugin_chat_echo?style=flat&label=Release" alt="Release"/>
-  </a>
-  <a href="https://github.com/AMYdd00/astrbot_plugin_chat_echo/commits/main">
-    <img src="https://img.shields.io/github/last-commit/AMYdd00/astrbot_plugin_chat_echo?style=flat&logo=git&label=Last%20Commit" alt="Last Commit"/>
-  </a>
-  <a href="https://github.com/AMYdd00/astrbot_plugin_chat_echo/issues">
-    <img src="https://img.shields.io/github/issues/AMYdd00/astrbot_plugin_chat_echo?style=flat&logo=github&label=Issues" alt="Issues"/>
-  </a>
-  <a href="https://github.com/AMYdd00/astrbot_plugin_chat_echo/blob/main/LICENSE">
-    <img src="https://img.shields.io/github/license/AMYdd00/astrbot_plugin_chat_echo?style=flat&label=License" alt="License"/>
-  </a>
+  <img src="https://count.getloli.com/@astrbot_plugin_chat_echo?name=astrbot_plugin_chat_echo&theme=green&padding=7&offset=0&align=top&scale=1&pixelated=1&darkmode=auto&prefix=0" alt="访问统计"/>
 </div>
