@@ -14,14 +14,14 @@
     "description": "分析用 LLM Provider（建议选便宜的模型）",
     "_special": "select_provider",
     "default": "",
-    "hint": "用于判断群友消息是否在回复Bot的LLM（建议用便宜的模型如GPT-4o-mini）。留空则使用该会话的默认Provider"
+    "hint": "用于判断群友消息是否在回复Bot的LLM（建议用便宜的模型如本地部署/DeepSeek）。留空则使用该会话的默认Provider"
   },
   "generator_provider_id": {
     "type": "string",
     "description": "生成用 LLM Provider（建议选高质量模型）",
     "_special": "select_provider",
     "default": "",
-    "hint": "用于生成主动回复内容的LLM（建议用质量高的模型如GPT-4.1）。留空则使用该会话的默认Provider"
+    "hint": "用于生成主动回复内容的LLM（建议用质量高的模型如GPT-5.5）。留空则使用该会话的默认Provider"
   },
   "track_timeout_seconds": {
     "type": "int",

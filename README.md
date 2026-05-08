@@ -23,7 +23,7 @@
 
 - ✅ **双路线互斥** — 回复模式和主动模式互不干扰
 - ✅ **LLM 智能分析** — 判断群友消息是否在回复 Bot，以及 Bot 是否应主动参与话题
-- ✅ **分离 Provider 支持** — 分析用便宜的模型（如 GPT-4o-mini），生成用高质量模型（如 GPT-4.1）
+- ✅ **分离 Provider 支持** — 分析用便宜的模型（如本地部署/DeepSeek），生成用高质量模型（如 GPT-5.5）
 - ✅ **可配置概率** — 支持全局概率和按群自定义概率
 - ✅ **群白名单** — 只在指定群启用，支持为每个群单独设置概率
 - ✅ **冷却机制** — 防止 Bot 过于频繁发言（支持回复冷却和主动冷却独立配置）
@@ -36,8 +36,8 @@
 | 配置项 | 类型 | 默认值 | 说明 |
 |--------|------|--------|------|
 | `trigger_mode` | string | `llm_response` | 触发模式：`llm_response`（仅 LLM 回复后监听）/ `any_message`（任何消息后监听） |
-| `analyzer_provider_id` | string | 空 | 分析用 LLM Provider（建议便宜的模型如 GPT-4o-mini）。留空使用会话默认 |
-| `generator_provider_id` | string | 空 | 生成用 LLM Provider（建议高质量模型如 GPT-4.1）。留空使用会话默认 |
+| `analyzer_provider_id` | string | 空 | 分析用 LLM Provider（建议便宜的模型如本地部署/DeepSeek）。留空使用会话默认 |
+| `generator_provider_id` | string | 空 | 生成用 LLM Provider（建议高质量模型如 GPT-5.5）。留空使用会话默认 |
 | `track_timeout_seconds` | int | `120` | 跟踪窗口(秒)。群聊沉默超时即停止，范围 10~600 |
 | `max_detection_count` | int | `10` | 最多分析多少条群友发言后停止本轮，范围 1~50 |
 | `reply_probability` | int | `100` | 回复模式分析概率(%)。100=每条都分析，50=一半概率 |
