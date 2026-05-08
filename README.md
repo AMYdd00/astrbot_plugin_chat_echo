@@ -52,9 +52,12 @@
 
 ### 群白名单 (`enabled_groups`)
 
-**格式：`群标识:【Bot发言后发给LLM分析要不要回复的概率】:【主动随机发给LLM分析要不要参与聊天的概率】`**
+**格式：`群ID:回复概率:主动概率`**
 
-可留空某个值，如 `群ID::30` 表示只设主动概率、回复概率用全局值。UMO格式也支持：`Bot:GroupMessage:群ID`
+> - `回复概率` — Bot发言后，群友消息按此概率发给LLM分析是否回复Bot
+> - `主动概率` — 随机抽取群消息按此概率发给LLM分析是否主动参与
+> - 留空某个值如 `群ID::30` 表示只设主动概率
+> - UMO格式同样支持：`Bot:GroupMessage:群ID`
 
 示例：
 ```json
@@ -124,3 +127,26 @@ Bot 发言 → 开始跟踪窗口 → 群友回复 → LLM 分析是否回复 Bo
 ## 作者
 
 - [AMYdd00](https://github.com/AMYdd00)
+
+---
+
+<div align="center">
+  <a href="https://github.com/AMYdd00/astrbot_plugin_chat_echo/stargazers">
+    <img src="https://img.shields.io/github/stars/AMYdd00/astrbot_plugin_chat_echo?style=flat&logo=github&label=Stars" alt="Stars"/>
+  </a>
+  <a href="https://github.com/AMYdd00/astrbot_plugin_chat_echo/forks">
+    <img src="https://img.shields.io/github/forks/AMYdd00/astrbot_plugin_chat_echo?style=flat&logo=github&label=Forks" alt="Forks"/>
+  </a>
+  <a href="https://github.com/AMYdd00/astrbot_plugin_chat_echo/releases">
+    <img src="https://img.shields.io/github/release/AMYdd00/astrbot_plugin_chat_echo?style=flat&label=Release" alt="Release"/>
+  </a>
+  <a href="https://github.com/AMYdd00/astrbot_plugin_chat_echo/commits/main">
+    <img src="https://img.shields.io/github/last-commit/AMYdd00/astrbot_plugin_chat_echo?style=flat&logo=git&label=Last%20Commit" alt="Last Commit"/>
+  </a>
+  <a href="https://github.com/AMYdd00/astrbot_plugin_chat_echo/issues">
+    <img src="https://img.shields.io/github/issues/AMYdd00/astrbot_plugin_chat_echo?style=flat&logo=github&label=Issues" alt="Issues"/>
+  </a>
+  <a href="https://github.com/AMYdd00/astrbot_plugin_chat_echo/blob/main/LICENSE">
+    <img src="https://img.shields.io/github/license/AMYdd00/astrbot_plugin_chat_echo?style=flat&label=License" alt="License"/>
+  </a>
+</div>
