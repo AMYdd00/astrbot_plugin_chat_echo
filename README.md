@@ -42,7 +42,6 @@
 | `max_detection_count` | int | `10` | 最多分析多少条群友发言后停止本轮，范围 1~50 |
 | `reply_probability` | int | `100` | 回复模式分析概率(%)。100=每条都分析，50=一半概率 |
 | `active_probability` | int | `0` | 主动模式参与概率(%)。0=关闭，100=每条都可能触发 |
-| `active_interval_minutes` | int | `30` | 主动模式最小间隔(分钟)，范围 1~480 |
 | `max_proactive_rounds` | int | `3` | 最大连续主动回复轮数，1=只接话一次，范围 1~10 |
 | `proactive_cooldown_seconds` | int | `300` | 主动发言冷却(秒)，范围 30~3600 |
 | `enabled_groups` | list | `[]` | 群白名单（见下方说明）。留空则所有群生效 |

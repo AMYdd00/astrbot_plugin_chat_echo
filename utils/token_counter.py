@@ -69,20 +69,21 @@ class TokenCounter:
         return self.data_dir / f"{group_id}.json"
 
     def _load(self, group_id: str) -> dict:
-        """从磁盘读取数据，优先使用缓存"""
-        # 如果缓存命中且有数据，直接返回缓存中的数据
-        if group_id in self._cache and self._cache[group_id]:
-            return {"days": dict(self._cache[group_id])}
+        """从磁盘读取数据，优先使用缓存并回填缓存"""
+        if group_id in self._cache:
+            return {"days": self._cache[group_id]}
         fp = self._get_file(group_id)
+        days = {}
         if fp.exists():
             try:
                 with open(str(fp), 'r', encoding='utf-8') as f:
                     data = json.load(f)
-                self._cleanup(data)
-                return data
+                self._cleanup(group_id, data)
+                days = data.get("days", {})
             except (json.JSONDecodeError, IOError):
-                return {"days": {}}
-        return {"days": {}}
+                days = {}
+        self._cache[group_id] = days
+        return {"days": days}
 
     def _save(self, group_id: str):
         """保存指定群的数据到磁盘"""
@@ -103,13 +104,15 @@ class TokenCounter:
         except IOError as e:
             logger.error(f"保存 token 数据失败 [{group_id}]: {e}")
 
-    def _cleanup(self, data: dict):
-        """清理超过保留天数的数据"""
+    def _cleanup(self, group_id: str, data: dict):
+        """清理超过保留天数的数据并标记 dirty 以落盘"""
         cutoff = str(date.today() - timedelta(days=DATA_RETENTION_DAYS))
         days = data.get("days", {})
         expired = [k for k in days if k < cutoff]
-        for k in expired:
-            del days[k]
+        if expired:
+            for k in expired:
+                del days[k]
+            self._dirty[group_id] = True
 
     async def record(self, group_id: str, prompt: int, completion: int):
         """记录一次 token 用量"""
@@ -155,8 +158,8 @@ class TokenCounter:
         return {"group_id": group_id, "prompt": prompt, "completion": completion, "total": total}
 
     async def get_daily(self, group_id: str, days_count: int = 30) -> List[dict]:
-        """获取最近 N 天逐日数据（从缓存读取，避免反复刷盘）"""
-        # 直接从缓存读取，不再刷盘
+        """获取最近 N 天逐日数据（优先从缓存读取，若无则加载）"""
+        self._load(group_id)
         days = self._cache.get(group_id, {})
         today = date.today()
         result = []

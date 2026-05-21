@@ -125,7 +125,7 @@ class ConversationTracker:
         self.group_name = ""
 
 
-@register("astrbot_plugin_chat_echo", "AMYdd00", "主动接话插件", "1.0.3")
+@register("astrbot_plugin_chat_echo", "AMYdd00", "主动接话插件", "1.0.4")
 class EchoPlugin(Star):
 
     def __init__(self, context: Context, config=None):
@@ -186,7 +186,8 @@ class EchoPlugin(Star):
                 self.config.proactive_analyzer_system_prompt = DEFAULT_PROACTIVE_ANALYZER_PROMPT
                 self.config.analyzer_system_prompt = DEFAULT_ANALYZER_PROMPT
                 self.config.generator_system_prompt = DEFAULT_GENERATOR_PROMPT
-            self.config.save_config()
+            if hasattr(self.config, "save_config"):
+                self.config.save_config()
             ver_file.parent.mkdir(parents=True, exist_ok=True)
             ver_file.write_text(str(CONFIG_VERSION))
             self.logger.info(f"配置已升级并保存 (v{CONFIG_VERSION})")
@@ -251,12 +252,36 @@ class EchoPlugin(Star):
         if not entry:
             return "", None, None
         parts = entry.split(":")
-        if len(parts) == 3:
-            return parts[0], int(parts[1]) if parts[1] else None, int(parts[2]) if parts[2] else None
-        elif len(parts) == 2:
-            return parts[0], int(parts[1]) if parts[1].isdigit() else None, None
+        
+        # 支持的平台列表
+        platforms = {"aiocqhttp", "telegram", "discord", "lark", "qq_official", "dingtalk", "kook", "slack", "mattermost", "satori"}
+        
+        # 判断是否为 UMO 格式（platform:message_type:group_id）
+        is_umo = False
+        if len(parts) >= 3:
+            if parts[0] in platforms or parts[1] in {"GroupMessage", "PrivateMessage", "GuildMessage"}:
+                is_umo = True
+                
+        if is_umo:
+            # UMO 格式下，前 3 位拼接为完整 UMO 标识
+            umo_id = ":".join(parts[:3])
+            reply_p = None
+            active_p = None
+            if len(parts) >= 4:
+                reply_p = int(parts[3]) if parts[3].strip().isdigit() else None
+            if len(parts) >= 5:
+                active_p = int(parts[4]) if parts[4].strip().isdigit() else None
+            return umo_id, reply_p, active_p
         else:
-            return entry, None, None
+            # 普通格式：group_id 或 group_id:reply_p 或 group_id:reply_p:active_p
+            group_id = parts[0]
+            reply_p = None
+            active_p = None
+            if len(parts) >= 2:
+                reply_p = int(parts[1]) if parts[1].strip().isdigit() else None
+            if len(parts) >= 3:
+                active_p = int(parts[2]) if parts[2].strip().isdigit() else None
+            return group_id, reply_p, active_p
 
     def _preparse_group_config(self):
         enabled = self._enabled_groups()
@@ -520,6 +545,16 @@ class EchoPlugin(Star):
                     )
             except Exception as e:
                 self.logger.exception(f"[回复] 写入会话历史失败: {e}")
+            
+            # 将 Bot 自身的回复追加进 tracker.collected 并更新 bot_message
+            tracker.collected.append({
+                "user_name": "Bot",
+                "user_id": "bot",
+                "content": reply_text,
+                "image_urls": [],
+                "time": time.time(),
+            })
+            tracker.bot_message = reply_text
             tracker.detection_count = 0
             tracker.expire_at = time.time() + self._track_timeout()
             self._proactive_flag[group_id] = False
@@ -587,6 +622,10 @@ class EchoPlugin(Star):
                     )
             except Exception as e:
                 self.logger.exception(f"[主动] 写入会话历史失败: {e}")
+            
+            # 开始跟踪对此主动发言的后续群友回复
+            await self._start_tracking(event, reply_text)
+            
             self._active_cooldowns[group_id] = time.time()
             if rounds >= self._max_rounds():
                 self.logger.info(f"[主动] 群 {group_id} 已达到最大主动轮数，停止本轮主动参与")
@@ -773,29 +812,43 @@ class EchoPlugin(Star):
 
     @staticmethod
     def _parse_json_response(text: str) -> Optional[dict]:
+        # 1. 尝试直接解析整段文本
+        try:
+            return json.loads(text.strip())
+        except json.JSONDecodeError:
+            pass
+
+        # 2. 尝试从 markdown 代码块中匹配 json
         m = re.search(r"```(?:json)?\s*\n?(.*?)\n?```", text, re.DOTALL)
         if m:
             json_str = m.group(1).strip()
+            try:
+                return json.loads(json_str)
+            except json.JSONDecodeError:
+                # 如果代码块内含有额外文字，降级到花括号匹配
+                text_to_search = json_str
         else:
-            stack = []
-            start = -1
-            for i, ch in enumerate(text):
-                if ch == '{':
-                    if not stack:
-                        start = i
-                    stack.append(ch)
-                elif ch == '}':
-                    if stack:
-                        stack.pop()
-                        if not stack and start != -1:
-                            json_str = text[start:i + 1]
-                            break
-            else:
-                return None
-        try:
-            return json.loads(json_str)
-        except json.JSONDecodeError:
-            return None
+            text_to_search = text
+
+        # 3. 降级方案：寻找第一个 { 和 最后一个 } 之间的内容并尝试解析
+        stack = []
+        start = -1
+        for i, ch in enumerate(text_to_search):
+            if ch == '{':
+                if not stack:
+                    start = i
+                stack.append(ch)
+            elif ch == '}':
+                if stack:
+                    stack.pop()
+                    if not stack and start != -1:
+                        json_str = text_to_search[start:i + 1]
+                        try:
+                            return json.loads(json_str)
+                        except json.JSONDecodeError:
+                            pass
+                        break
+        return None
 
     async def page_token_stats(self):
         try:
