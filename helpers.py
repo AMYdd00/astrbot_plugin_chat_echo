@@ -4,8 +4,8 @@ from astrbot.api.event import AstrMessageEvent
 from astrbot.core.message.components import Image as ImageComponent
 
 
-def extract_image_urls(event: AstrMessageEvent) -> list:
-    """Extract list of image URLs from message event."""
+async def extract_image_urls(event: AstrMessageEvent) -> list:
+    """Extract list of image URLs or local file paths from message event asynchronously."""
     urls = []
     try:
         for comp in event.get_messages():
@@ -16,6 +16,10 @@ def extract_image_urls(event: AstrMessageEvent) -> list:
                     comp.file.startswith("http://") or comp.file.startswith("https://")
                 ):
                     urls.append(comp.file)
+                else:
+                    path = await comp.convert_to_file_path()
+                    if path:
+                        urls.append(path)
     except Exception:
         pass
     return urls

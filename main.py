@@ -122,7 +122,15 @@ class EchoPlugin(Star):
         if not msg_content.strip():
             msg_content = event.get_message_outline()
 
-        image_urls = extract_image_urls(event)
+        image_urls = await extract_image_urls(event)
+        if image_urls and self.config_helper.enable_image_caption():
+            captions = []
+            for url in image_urls:
+                caption = await self.get_image_caption(url, umo)
+                if caption:
+                    captions.append(caption)
+            if captions:
+                msg_content += " " + " ".join(f"[图片描述: {cap}]" for cap in captions)
 
         msg = {
             "user_name": event.get_sender_name(),
@@ -209,6 +217,44 @@ class EchoPlugin(Star):
             from quart import jsonify
 
             return jsonify({"status": "error", "message": str(e)})
+
+    async def get_image_caption(self, image_url: str, umo: str) -> str:
+        """Call LLM provider to get description/caption for a given image URL."""
+        provider_id = self.config_helper.image_caption_provider()
+        global_cfg = self.context.get_config(umo=umo)
+
+        # Fallback to global default image caption provider if not set in plugin
+        if not provider_id:
+            provider_id = global_cfg.get("provider_settings", {}).get(
+                "default_image_caption_provider_id", ""
+            )
+
+        if not provider_id:
+            self.logger.warning(
+                "No image caption provider configured in plugin or global settings."
+            )
+            return ""
+
+        prov = self.context.get_provider_by_id(provider_id)
+        if prov is None:
+            self.logger.error(f"Image caption provider '{provider_id}' not found.")
+            return ""
+
+        prompt = global_cfg.get("provider_settings", {}).get(
+            "image_caption_prompt", "Please describe the image using Chinese."
+        )
+
+        try:
+            self.logger.debug(
+                f"Requesting image caption from provider {provider_id} for URL {image_url}"
+            )
+            resp = await prov.text_chat(prompt=prompt, image_urls=[image_url])
+            if resp and resp.completion_text:
+                return resp.completion_text.strip()
+        except Exception as e:
+            self.logger.exception(f"Failed to get image caption: {e}")
+
+        return ""
 
     async def terminate(self):
         self.logger.info("主动接话插件卸载中...")

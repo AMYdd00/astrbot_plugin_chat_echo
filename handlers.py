@@ -11,6 +11,7 @@ from astrbot.core.message.message_event_result import (
     ResultContentType,
 )
 
+from .helpers import extract_image_urls
 from .tracker import ConversationTracker
 
 MAX_CONTEXT_MESSAGES = 20
@@ -56,13 +57,27 @@ async def start_tracking(
     except Exception as e:
         plugin.logger.exception(f"Failed to get group name: {e}")
 
+    trigger_message = event.message_str or ""
+    if not trigger_message.strip():
+        trigger_message = event.get_message_outline()
+
+    image_urls = await extract_image_urls(event)
+    if image_urls and plugin.config_helper.enable_image_caption():
+        captions = []
+        for url in image_urls:
+            caption = await plugin.get_image_caption(url, event.unified_msg_origin)
+            if caption:
+                captions.append(caption)
+        if captions:
+            trigger_message += " " + " ".join(f"[图片描述: {cap}]" for cap in captions)
+
     plugin.tracker_manager.start_tracking(
         group_id=group_id,
         unified_msg_origin=event.unified_msg_origin,
         bot_message=bot_message,
         trigger_user_name=event.get_sender_name(),
         trigger_user_id=str(event.get_sender_id()),
-        trigger_message=event.message_str,
+        trigger_message=trigger_message,
         expire_seconds=plugin.config_helper.track_timeout(),
         group_name=gname,
     )

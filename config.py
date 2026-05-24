@@ -178,6 +178,12 @@ class ConfigHelper:
     def generator_provider(self) -> str:
         return str(self.cfg("generator_provider_id", "") or "")
 
+    def enable_image_caption(self) -> bool:
+        return bool(self.cfg("enable_image_caption", False))
+
+    def image_caption_provider(self) -> str:
+        return str(self.cfg("image_caption_provider_id", "") or "")
+
     def enable_llm_tools(self) -> bool:
         return bool(self.cfg("enable_llm_tools", True))
 
