@@ -92,6 +92,9 @@ async def handle_reply(
     group_id = tracker.group_id
     try:
         context_text, image_urls = build_analyze_context(tracker)
+        if plugin.config_helper.enable_image_caption():
+            image_urls = None
+
         plugin.logger.info(
             f"[Reply] Analyzing if response is targeted to Bot in group {group_id}..."
         )
@@ -146,10 +149,16 @@ async def handle_reply(
             conv_mgr = plugin.context.conversation_manager
             cid = await conv_mgr.get_curr_conversation_id(tracker.unified_msg_origin)
             if cid:
+                user_msg_content = ""
+                if tracker.collected:
+                    user_msg_content = tracker.collected[-1].get("content") or ""
+                if not user_msg_content:
+                    user_msg_content = event.message_str or ""
+
                 await conv_mgr.add_message_pair(
                     cid=cid,
                     user_message=UserMessageSegment(
-                        content=[TextPart(text=event.message_str or "")]
+                        content=[TextPart(text=user_msg_content)]
                     ),
                     assistant_message=AssistantMessageSegment(
                         content=[TextPart(text=reply_text)]
@@ -206,6 +215,9 @@ async def handle_proactive(
             if m.get("image_urls"):
                 all_image_urls.extend(m["image_urls"])
         context_text = "\n".join(context_lines)
+
+        if plugin.config_helper.enable_image_caption():
+            all_image_urls = None
 
         plugin.logger.info(
             f"[Proactive] Analyzing if Bot should participate in group {group_id}..."
