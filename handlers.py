@@ -17,14 +17,16 @@ MAX_CONTEXT_MESSAGES = 20
 
 
 def build_analyze_context(tracker: ConversationTracker) -> tuple[str, list[str]]:
-    """Build the analysis context string and gather all associated image URLs."""
-    lines = [
-        "=== Bot 刚才发出的消息 ===",
-        tracker.bot_message or "[Bot发送了一条消息]",
-        f"\n=== 触发者: {tracker.trigger_user_name} ===",
-        f"触发者消息: {tracker.trigger_message or '[未知]'}",
-        "\n=== 群聊对话记录 ===",
-    ]
+    """Build the analysis context string chronologically and gather all associated image URLs."""
+    lines = ["=== 群聊对话记录 (按时间顺序) ==="]
+    idx = 1
+    if tracker.trigger_message:
+        lines.append(f"{idx}. {tracker.trigger_user_name}: {tracker.trigger_message}")
+        idx += 1
+
+    lines.append(f"{idx}. Bot: {tracker.bot_message or '[Bot发送了一条消息]'}")
+    idx += 1
+
     collected = tracker.collected
     all_image_urls = []
     if len(collected) > MAX_CONTEXT_MESSAGES:
@@ -32,8 +34,9 @@ def build_analyze_context(tracker: ConversationTracker) -> tuple[str, list[str]]
         lines.append(
             f"[仅显示最近 {MAX_CONTEXT_MESSAGES} 条消息, 共 {len(tracker.collected)} 条]"
         )
-    for i, msg in enumerate(collected, 1):
-        lines.append(f"{i}. {msg['user_name']}: {msg['content']}")
+    for msg in collected:
+        lines.append(f"{idx}. {msg['user_name']}: {msg['content']}")
+        idx += 1
         if msg.get("image_urls"):
             all_image_urls.extend(msg["image_urls"])
     return "\n".join(lines), all_image_urls
@@ -131,7 +134,7 @@ async def handle_reply(
                 await conv_mgr.add_message_pair(
                     cid=cid,
                     user_message=UserMessageSegment(
-                        content=[TextPart(text=tracker.trigger_message)]
+                        content=[TextPart(text=event.message_str or "")]
                     ),
                     assistant_message=AssistantMessageSegment(
                         content=[TextPart(text=reply_text)]
