@@ -77,7 +77,7 @@ def build_analyze_context(tracker: ConversationTracker) -> tuple[str, list[str]]
         lines.append(f"{idx}. {tracker.trigger_user_name}: {tracker.trigger_message}")
         idx += 1
 
-    lines.append(f"{idx}. Bot: {tracker.bot_message or '[Bot发送了一条消息]'}")
+    lines.append(f"{idx}. 你: {tracker.bot_message or '[你发送了一条消息]'}")
     idx += 1
 
     collected = tracker.collected
@@ -88,7 +88,13 @@ def build_analyze_context(tracker: ConversationTracker) -> tuple[str, list[str]]
             f"[仅显示最近 {MAX_CONTEXT_MESSAGES} 条消息, 共 {len(tracker.collected)} 条]"
         )
     for msg in collected:
-        lines.append(f"{idx}. {msg['user_name']}: {msg['content']}")
+        hints = []
+        if msg.get("is_at_bot"):
+            hints.append("此消息@了你或提到了你的名字/ID")
+        elif msg.get("is_at_other"):
+            hints.append("此消息@了或回复了其他人，不是你")
+        hint_str = f" (提示：{', '.join(hints)})" if hints else ""
+        lines.append(f"{idx}. {msg['user_name']}: {msg['content']}{hint_str}")
         idx += 1
         if msg.get("image_urls"):
             all_image_urls.extend(msg["image_urls"])
@@ -170,11 +176,25 @@ async def handle_reply(
         if plugin.config_helper.enable_image_caption():
             image_urls = None
 
+        persona_name = ""
+        try:
+            personality = await plugin.context.persona_manager.get_default_persona_v3(
+                tracker.unified_msg_origin
+            )
+            if personality:
+                persona_name = personality.get("name") or ""
+        except Exception:
+            pass
+
         plugin.logger.info(
             f"[Reply] Analyzing if response is targeted to Bot in group {group_id}..."
         )
         analysis = await plugin.llm_handler.call_analyzer(
-            context_text, image_urls=image_urls, umo=tracker.unified_msg_origin
+            context_text,
+            image_urls=image_urls,
+            umo=tracker.unified_msg_origin,
+            self_id=event.get_self_id(),
+            persona_name=persona_name,
         )
         if analysis is None:
             return None
@@ -254,17 +274,17 @@ async def handle_reply(
                 f"[Reply] Failed to write conversation history: {e}"
             )
 
-        # Append Bot's own response to tracker.collected and update bot_message
+        # Append Bot's own response to tracker.collected
         tracker.collected.append(
             {
-                "user_name": "Bot",
+                "user_name": "你",
                 "user_id": "bot",
                 "content": reply_text,
                 "image_urls": [],
                 "time": time.time(),
+                "is_at_bot": False,
             }
         )
-        tracker.bot_message = reply_text
         tracker.detection_count = 0
         tracker.expire_at = time.time() + plugin.config_helper.track_timeout()
         plugin.tracker_manager.set_proactive_flag(group_id, False)
@@ -297,7 +317,13 @@ async def handle_proactive(
         context_lines = ["=== 群聊中的最近消息 ==="]
         all_image_urls = []
         for m in recent_window:
-            context_lines.append(f"{m['user_name']}: {m['content']}")
+            hints = []
+            if m.get("is_at_bot"):
+                hints.append("此消息@了你或提到了你的名字/ID")
+            elif m.get("is_at_other"):
+                hints.append("此消息@了或回复了其他人，不是你")
+            hint_str = f" (提示：{', '.join(hints)})" if hints else ""
+            context_lines.append(f"{m['user_name']}: {m['content']}{hint_str}")
             if m.get("image_urls"):
                 all_image_urls.extend(m["image_urls"])
         context_text = "\n".join(context_lines)
@@ -305,11 +331,25 @@ async def handle_proactive(
         if plugin.config_helper.enable_image_caption():
             all_image_urls = None
 
+        persona_name = ""
+        try:
+            personality = await plugin.context.persona_manager.get_default_persona_v3(
+                event.unified_msg_origin
+            )
+            if personality:
+                persona_name = personality.get("name") or ""
+        except Exception:
+            pass
+
         plugin.logger.info(
             f"[Proactive] Analyzing if Bot should participate in group {group_id}..."
         )
         analysis = await plugin.llm_handler.call_proactive_analyzer(
-            context_text, image_urls=all_image_urls, umo=event.unified_msg_origin
+            context_text,
+            image_urls=all_image_urls,
+            umo=event.unified_msg_origin,
+            self_id=event.get_self_id(),
+            persona_name=persona_name,
         )
         if analysis is None:
             return None
@@ -401,7 +441,13 @@ async def handle_keyword(
         context_lines = ["=== 群聊中的最近消息 ==="]
         all_image_urls = []
         for m in recent_window:
-            context_lines.append(f"{m['user_name']}: {m['content']}")
+            hints = []
+            if m.get("is_at_bot"):
+                hints.append("此消息@了你或提到了你的名字/ID")
+            elif m.get("is_at_other"):
+                hints.append("此消息@了或回复了其他人，不是你")
+            hint_str = f" (提示：{', '.join(hints)})" if hints else ""
+            context_lines.append(f"{m['user_name']}: {m['content']}{hint_str}")
             if m.get("image_urls"):
                 all_image_urls.extend(m["image_urls"])
         context_text = "\n".join(context_lines)

@@ -102,17 +102,56 @@ class LLMHandler:
         return text.strip() if text else None
 
     async def call_proactive_analyzer(
-        self, context_text: str, image_urls: list = None, umo: str = ""
+        self,
+        context_text: str,
+        image_urls: list = None,
+        umo: str = "",
+        self_id: str = "",
+        persona_name: str = "",
     ) -> dict | None:
-        prompt = (
-            f"请分析以下群聊内容：\n\n{context_text}\n\n请判断Bot是否应该参与讨论。"
-        )
+        prompt = f"请分析以下群聊内容：\n\n{context_text}\n\n请判断你是否应该参与讨论。"
         provider_id = self.config_helper.analyzer_provider()
+        system_prompt = self.config_helper.proactive_analyzer_prompt()
+
+        identity_hints = []
+        if self_id:
+            identity_hints.append(f"你的账号ID/QQ号是: {self_id}")
+        identity_str = "\n".join(identity_hints) if identity_hints else ""
+
+        try:
+            personality = await self.context.persona_manager.get_default_persona_v3(umo)
+            if personality and personality.get("prompt"):
+                persona_text = personality["prompt"].strip()
+                if identity_str:
+                    persona_text = f"{identity_str}\n{persona_text}"
+                system_prompt = f"<persona>\n{persona_text}\n</persona>\n\n<task_instructions>\n{system_prompt}\n</task_instructions>"
+            else:
+                if identity_str:
+                    system_prompt = f"<persona>\n{identity_str}\n</persona>\n\n<task_instructions>\n{system_prompt}\n</task_instructions>"
+                else:
+                    system_prompt = (
+                        f"<task_instructions>\n{system_prompt}\n</task_instructions>"
+                    )
+        except Exception as e:
+            self.logger.exception(f"Failed to read persona setting: {e}")
+            if identity_str:
+                system_prompt = f"<persona>\n{identity_str}\n</persona>\n\n<task_instructions>\n{system_prompt}\n</task_instructions>"
+            else:
+                system_prompt = (
+                    f"<task_instructions>\n{system_prompt}\n</task_instructions>"
+                )
+
+        self.logger.debug(
+            f"\n[AnalyzerPrompt] === Proactive Analysis LLM Call ===\n"
+            f"--- System Prompt ---\n{system_prompt}\n"
+            f"--- User Prompt ---\n{prompt}\n"
+            f"============================================="
+        )
         try:
             resp = await self.call_llm(
                 provider_id=provider_id or None,
                 prompt=prompt,
-                system_prompt=self.config_helper.proactive_analyzer_prompt(),
+                system_prompt=system_prompt,
                 image_urls=image_urls,
                 umo=umo,
             )
@@ -124,17 +163,58 @@ class LLMHandler:
             return None
 
     async def call_analyzer(
-        self, context_text: str, image_urls: list = None, umo: str = ""
+        self,
+        context_text: str,
+        image_urls: list = None,
+        umo: str = "",
+        self_id: str = "",
+        persona_name: str = "",
     ) -> dict | None:
         prompt = (
-            f"请分析以下群聊上下文：\n\n{context_text}\n\n请判断这些消息是否在回复Bot。"
+            f"请分析以下群聊上下文：\n\n{context_text}\n\n请判断这些消息是否在回复你。"
         )
         provider_id = self.config_helper.analyzer_provider()
+        system_prompt = self.config_helper.analyzer_prompt()
+
+        identity_hints = []
+        if self_id:
+            identity_hints.append(f"你的账号ID/QQ号是: {self_id}")
+        identity_str = "\n".join(identity_hints) if identity_hints else ""
+
+        try:
+            personality = await self.context.persona_manager.get_default_persona_v3(umo)
+            if personality and personality.get("prompt"):
+                persona_text = personality["prompt"].strip()
+                if identity_str:
+                    persona_text = f"{identity_str}\n{persona_text}"
+                system_prompt = f"<persona>\n{persona_text}\n</persona>\n\n<task_instructions>\n{system_prompt}\n</task_instructions>"
+            else:
+                if identity_str:
+                    system_prompt = f"<persona>\n{identity_str}\n</persona>\n\n<task_instructions>\n{system_prompt}\n</task_instructions>"
+                else:
+                    system_prompt = (
+                        f"<task_instructions>\n{system_prompt}\n</task_instructions>"
+                    )
+        except Exception as e:
+            self.logger.exception(f"Failed to read persona setting: {e}")
+            if identity_str:
+                system_prompt = f"<persona>\n{identity_str}\n</persona>\n\n<task_instructions>\n{system_prompt}\n</task_instructions>"
+            else:
+                system_prompt = (
+                    f"<task_instructions>\n{system_prompt}\n</task_instructions>"
+                )
+
+        self.logger.debug(
+            f"\n[AnalyzerPrompt] === Reply Analysis LLM Call ===\n"
+            f"--- System Prompt ---\n{system_prompt}\n"
+            f"--- User Prompt ---\n{prompt}\n"
+            f"=========================================="
+        )
         try:
             resp = await self.call_llm(
                 provider_id=provider_id or None,
                 prompt=prompt,
-                system_prompt=self.config_helper.analyzer_prompt(),
+                system_prompt=system_prompt,
                 image_urls=image_urls,
                 umo=umo,
             )
@@ -152,15 +232,15 @@ class LLMHandler:
             personality = await self.context.persona_manager.get_default_persona_v3(umo)
             if personality and personality.get("prompt"):
                 persona_text = personality["prompt"].strip()
-                return f"{plugin_prompt}\n\n（来自人格设定）{persona_text}"
+                return f"<persona>\n{persona_text}\n</persona>\n\n<task_instructions>\n{plugin_prompt}\n</task_instructions>"
         except Exception as e:
             self.logger.exception(f"Failed to read persona setting: {e}")
-        return plugin_prompt
+        return f"<task_instructions>\n{plugin_prompt}\n</task_instructions>"
 
     async def call_generator(
         self, context_text: str, image_urls: list = None, umo: str = ""
     ) -> str | None:
-        prompt = f"以下是群聊中的对话上下文：\n\n{context_text}\n\n请以Bot的身份自然地接上对话。"
+        prompt = f"以下是群聊中的对话上下文：\n\n{context_text}\n\n请以你的身份自然地接上对话。"
         return await self.call_generator_raw(prompt, image_urls=image_urls, umo=umo)
 
     async def call_generator_raw(
@@ -168,6 +248,12 @@ class LLMHandler:
     ) -> str | None:
         provider_id = self.config_helper.generator_provider()
         system_prompt = await self.build_generator_prompt(umo)
+        self.logger.debug(
+            f"\n[GeneratorPrompt] === Raw LLM Call ===\n"
+            f"--- System Prompt ---\n{system_prompt}\n"
+            f"--- User Prompt ---\n{prompt}\n"
+            f"====================================="
+        )
         try:
             resp = await self.call_llm(
                 provider_id=provider_id or None,
@@ -207,9 +293,15 @@ class LLMHandler:
             tools = None
         sender_name = event.get_sender_name()
         sender_id = event.get_sender_id()
-        user_hint = f"\n[系统提示：当前群聊对话中，用户 {sender_name}（ID: {sender_id}）正在和 Bot 对话。所有需要指定用户的工具调用请使用此用户 ID。]"
+        user_hint = f"\n[系统提示：当前群聊对话中，用户 {sender_name}（ID: {sender_id}）正在和你对话。所有需要指定用户的工具调用请使用此用户 ID。]"
         enhanced_prompt = prompt + user_hint
         system_prompt = await self.build_generator_prompt(umo)
+        self.logger.debug(
+            f"\n[GeneratorPrompt] === LLM Tool Loop Call ===\n"
+            f"--- System Prompt ---\n{system_prompt}\n"
+            f"--- User Prompt ---\n{enhanced_prompt}\n"
+            f"============================================="
+        )
         try:
             resp = await self.context.tool_loop_agent(
                 event=event,

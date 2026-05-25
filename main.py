@@ -10,6 +10,7 @@ from pathlib import Path
 from astrbot.api import logger
 from astrbot.api.event import AstrMessageEvent, filter
 from astrbot.api.event.filter import EventMessageType
+from astrbot.api.message_components import At, Reply
 from astrbot.api.star import Context, Star, StarTools, register
 
 from .config import ConfigHelper, upgrade_config
@@ -123,6 +124,51 @@ class EchoPlugin(Star):
         except (AttributeError, TypeError, ValueError):
             pass
 
+        # Check if the message is @ing the bot (by ID or name) or mentioning the bot's name/ID
+        is_at_bot = False
+        is_at_other = False
+        msg_text = event.message_str or ""
+        self_id = event.get_self_id()
+
+        persona_name = ""
+        try:
+            personality = await self.context.persona_manager.get_default_persona_v3(umo)
+            if personality:
+                persona_name = personality.get("name") or ""
+        except Exception:
+            pass
+
+        # 1. Check message components
+        for comp in event.get_messages():
+            if isinstance(comp, At):
+                if str(comp.qq) == str(self_id):
+                    is_at_bot = True
+                elif (
+                    persona_name
+                    and persona_name != "default"
+                    and comp.name
+                    and persona_name.lower() in comp.name.lower()
+                ):
+                    is_at_bot = True
+                elif str(comp.qq) != "all":
+                    is_at_other = True
+            elif isinstance(comp, Reply):
+                if str(comp.sender_id) == str(self_id):
+                    is_at_bot = True
+                else:
+                    is_at_other = True
+
+        # 2. Check if the text contains bot's name/nickname or self_id
+        if not is_at_bot:
+            if self_id and str(self_id) in msg_text:
+                is_at_bot = True
+            elif (
+                persona_name
+                and persona_name != "default"
+                and persona_name.lower() in msg_text.lower()
+            ):
+                is_at_bot = True
+
         msg_content = event.message_str or ""
         if not msg_content.strip():
             msg_content = event.get_message_outline()
@@ -141,12 +187,18 @@ class EchoPlugin(Star):
             if captions:
                 msg_content += " " + " ".join(f"[图片描述: {cap}]" for cap in captions)
 
+        user_name = event.get_sender_name()
+        if is_bot:
+            user_name = "你"
+
         msg = {
-            "user_name": event.get_sender_name(),
+            "user_name": user_name,
             "user_id": str(event.get_sender_id()),
             "content": msg_content,
             "image_urls": image_urls,
             "time": now,
+            "is_at_bot": is_at_bot,
+            "is_at_other": is_at_other and not is_at_bot,
         }
 
         window = self.tracker_manager.add_to_recent(
