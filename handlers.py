@@ -191,6 +191,11 @@ async def handle_reply(
             )
             return None
 
+        # Trigger OnLLMResponseEvent event for plugin cooperation (e.g. meme_manager)
+        llm_response = LLMResponse(role="assistant", completion_text=reply_text)
+        await call_event_hook(event, EventType.OnLLMResponseEvent, llm_response)
+        reply_text = llm_response.completion_text
+
         plugin.logger.info(f"[Reply] Replying to group {group_id}: {reply_text[:60]}")
         plugin.tracker_manager.set_proactive_flag(group_id, True)
 
@@ -300,6 +305,11 @@ async def handle_proactive(
         )
         if not reply_text:
             return None
+
+        # Trigger OnLLMResponseEvent event for plugin cooperation (e.g. meme_manager)
+        llm_response = LLMResponse(role="assistant", completion_text=reply_text)
+        await call_event_hook(event, EventType.OnLLMResponseEvent, llm_response)
+        reply_text = llm_response.completion_text
 
         rounds = plugin.tracker_manager.increment_proactive_rounds(group_id)
         max_rounds = plugin.config_helper.max_rounds()
