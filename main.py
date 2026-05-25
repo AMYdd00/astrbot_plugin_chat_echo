@@ -13,7 +13,7 @@ from astrbot.api.event.filter import EventMessageType
 from astrbot.api.star import Context, Star, StarTools, register
 
 from .config import ConfigHelper, upgrade_config
-from .handlers import handle_proactive, handle_reply, start_tracking
+from .handlers import handle_keyword, handle_proactive, handle_reply, start_tracking
 from .helpers import (
     extract_bot_text,
     extract_image_urls,
@@ -64,7 +64,10 @@ class EchoPlugin(Star):
         )
 
     async def initialize(self):
-        self.logger.info("主动接话插件初始化完成")
+        self.logger.info(
+            f"主动接话插件初始化完成 | 触发模式: {self.config_helper.trigger_mode()} | "
+            f"关键词监听: {self.config_helper.enable_keyword_trigger()} (规则数: {len(self.config_helper.parsed_keywords)})"
+        )
         self.token_counter.start()
 
     @filter.on_llm_response()
@@ -152,6 +155,47 @@ class EchoPlugin(Star):
 
         if is_bot:
             return
+
+        # ====== Keyword Trigger (Route 3) ======
+        if (
+            self.config_helper.enable_keyword_trigger()
+            and self.config_helper.parsed_keywords
+        ):
+            matched_keyword = None
+            matched_prob = None
+            content_lower = msg_content.lower()
+            for kw, prob in self.config_helper.parsed_keywords:
+                if kw.lower() in content_lower:
+                    matched_keyword = kw
+                    matched_prob = (
+                        prob
+                        if prob is not None
+                        else self.config_helper.keyword_default_probability()
+                    )
+                    break
+
+            if matched_keyword is not None:
+                self.logger.info(
+                    f"[Keyword] Matched keyword '{matched_keyword}' in group {group_id}, matched_prob={matched_prob}%."
+                )
+                if is_probability_hit(matched_prob):
+                    if not (
+                        self.tracker_manager.is_active_thinking(group_id)
+                        or self.tracker_manager.is_proactive_flagged(group_id)
+                    ):
+                        self.tracker_manager.set_active_thinking(group_id, True)
+                        try:
+                            res = await handle_keyword(
+                                self, event, msg, window, matched_keyword
+                            )
+                            if res:
+                                return res
+                        finally:
+                            self.tracker_manager.set_active_thinking(group_id, False)
+                else:
+                    self.logger.info(
+                        f"[Keyword] Keyword '{matched_keyword}' matched but probability roll missed."
+                    )
 
         # ====== Reply Mode (Route 1) ======
         tracker = self.tracker_manager.get_tracker(group_id)
