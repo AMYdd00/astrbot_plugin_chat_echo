@@ -176,6 +176,9 @@ class ConfigHelper:
     def enable_keyword_trigger(self) -> bool:
         return bool(self.cfg("enable_keyword_trigger", False))
 
+    def enable_keyword_on_image(self) -> bool:
+        return bool(self.cfg("enable_keyword_on_image", False))
+
     def keyword_rules(self) -> list:
         return self.cfg("keyword_rules", [])
 
@@ -211,6 +214,9 @@ class ConfigHelper:
 
     def enable_image_caption(self) -> bool:
         return bool(self.cfg("enable_image_caption", False))
+
+    def image_caption_probability(self) -> int:
+        return int(self.cfg("image_caption_probability", 100))
 
     def image_caption_provider(self) -> str:
         return str(self.cfg("image_caption_provider_id", "") or "")

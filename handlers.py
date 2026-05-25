@@ -137,12 +137,33 @@ async def start_tracking(
         plugin.token_counter.set_group_name(group_id, gname)
 
 
+async def ensure_context_captions(plugin, messages: list[dict], umo: str) -> None:
+    """Lazily caption any uncaptioned images in the message list in-place."""
+    if not plugin.config_helper.enable_image_caption():
+        return
+    for msg in messages:
+        image_urls = msg.get("image_urls")
+        if image_urls and "[图片描述:" not in msg.get("content", ""):
+            captions = []
+            for url in image_urls:
+                caption = await plugin.get_image_caption(url, umo)
+                if caption:
+                    captions.append(caption)
+            if captions:
+                msg["content"] += " " + " ".join(
+                    f"[图片描述: {cap}]" for cap in captions
+                )
+
+
 async def handle_reply(
     plugin, tracker: ConversationTracker, event: AstrMessageEvent
 ) -> MessageEventResult | None:
     """Process message under active tracking window (Route 1)."""
     group_id = tracker.group_id
     try:
+        await ensure_context_captions(
+            plugin, tracker.collected, tracker.unified_msg_origin
+        )
         context_text, image_urls = build_analyze_context(tracker)
         if plugin.config_helper.enable_image_caption():
             image_urls = None
@@ -256,6 +277,7 @@ async def handle_proactive(
     """Process message under proactive activation check (Route 2)."""
     group_id = str(event.get_group_id())
     try:
+        await ensure_context_captions(plugin, recent_window, event.unified_msg_origin)
         gname = ""
         try:
             g = await event.get_group()
@@ -363,6 +385,7 @@ async def handle_keyword(
     """Process message under keyword trigger (Route 3)."""
     group_id = str(event.get_group_id())
     try:
+        await ensure_context_captions(plugin, recent_window, event.unified_msg_origin)
         context_lines = ["=== 群聊中的最近消息 ==="]
         all_image_urls = []
         for m in recent_window:

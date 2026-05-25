@@ -125,7 +125,11 @@ class EchoPlugin(Star):
             msg_content = event.get_message_outline()
 
         image_urls = await extract_image_urls(event)
-        if image_urls and self.config_helper.enable_image_caption():
+        if (
+            image_urls
+            and self.config_helper.enable_image_caption()
+            and self.config_helper.enable_keyword_on_image()
+        ):
             captions = []
             for url in image_urls:
                 caption = await self.get_image_caption(url, umo)
@@ -264,6 +268,13 @@ class EchoPlugin(Star):
                 f"[ImageCache] Hit cache for image {image_url[:60]}... -> {cached[:30]}"
             )
             return cached
+
+        # Check probability for new image captioning
+        if not is_probability_hit(self.config_helper.image_caption_probability()):
+            self.logger.info(
+                f"[ImageCache] Cache miss for image {image_url[:60]}..., but skipped captioning due to probability constraint ({self.config_helper.image_caption_probability()}%)."
+            )
+            return ""
 
         provider_id = self.config_helper.image_caption_provider()
         global_cfg = self.context.get_config(umo=umo)

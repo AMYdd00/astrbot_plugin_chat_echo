@@ -29,6 +29,17 @@
     "hint": "若使用的不是多模态模型，开启此项可对群聊消息中的图片使用图片转述模型进行描述转述，供模型阅读。",
     "default": false
   },
+  "image_caption_probability": {
+    "type": "int",
+    "description": "图片转述概率（%）",
+    "hint": "当缓存未命中时，按此概率决定是否调用大模型对新图片进行转述。已缓存的图片会100%直接使用。100=每张都转述，0=不转述新图片",
+    "default": 100,
+    "slider": {
+      "min": 0,
+      "max": 100,
+      "step": 5
+    }
+  },
   "image_caption_provider_id": {
     "type": "string",
     "description": "图片转述 LLM Provider",
@@ -90,6 +101,12 @@
     "type": "bool",
     "description": "启用关键词监听模式",
     "hint": "开启后，当群聊消息中提到设置的兴趣关键词时，将按概率触发回复",
+    "default": false
+  },
+  "enable_keyword_on_image": {
+    "type": "bool",
+    "description": "关键词匹配图片内容",
+    "hint": "开启后，会对图片进行转述，并将转述文本用于匹配关键词。关闭则只对文本消息进行关键词匹配（更省 Token）",
     "default": false
   },
   "keyword_rules": {
