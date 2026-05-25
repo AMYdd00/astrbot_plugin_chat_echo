@@ -117,7 +117,9 @@ async def start_tracking(
     if image_urls and plugin.config_helper.enable_image_caption():
         captions = []
         for url in image_urls:
-            caption = await plugin.get_image_caption(url, event.unified_msg_origin)
+            caption = await plugin.get_image_caption(
+                url, event.unified_msg_origin, force=True
+            )
             if caption:
                 captions.append(caption)
         if captions:
@@ -146,7 +148,7 @@ async def ensure_context_captions(plugin, messages: list[dict], umo: str) -> Non
         if image_urls and "[图片描述:" not in msg.get("content", ""):
             captions = []
             for url in image_urls:
-                caption = await plugin.get_image_caption(url, umo)
+                caption = await plugin.get_image_caption(url, umo, force=True)
                 if caption:
                     captions.append(caption)
             if captions:

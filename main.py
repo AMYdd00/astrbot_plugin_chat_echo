@@ -30,7 +30,7 @@ PLUGIN_NAME = "astrbot_plugin_chat_echo"
 PROACTIVE_WINDOW_SIZE = 10
 
 
-@register("astrbot_plugin_chat_echo", "AMYdd00", "主动接话插件", "1.0.4")
+@register("astrbot_plugin_chat_echo", "AMYdd00", "主动接话插件", "1.0.5")
 class EchoPlugin(Star):
     def __init__(self, context: Context, config=None):
         super().__init__(context)
@@ -258,7 +258,9 @@ class EchoPlugin(Star):
 
             return jsonify({"status": "error", "message": str(e)})
 
-    async def get_image_caption(self, image_url: str, umo: str) -> str:
+    async def get_image_caption(
+        self, image_url: str, umo: str, force: bool = False
+    ) -> str:
         """Call LLM provider to get description/caption for a given image URL."""
         # Query cache first
         img_hash = await self.caption_cache.get_hash(image_url)
@@ -270,7 +272,9 @@ class EchoPlugin(Star):
             return cached
 
         # Check probability for new image captioning
-        if not is_probability_hit(self.config_helper.image_caption_probability()):
+        if not force and not is_probability_hit(
+            self.config_helper.image_caption_probability()
+        ):
             self.logger.info(
                 f"[ImageCache] Cache miss for image {image_url[:60]}..., but skipped captioning due to probability constraint ({self.config_helper.image_caption_probability()}%)."
             )
