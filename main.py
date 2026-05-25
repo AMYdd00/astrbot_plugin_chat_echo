@@ -23,13 +23,14 @@ from .helpers import (
 )
 from .llm_client import LLMHandler
 from .tracker import TrackerManager
+from .utils.caption_cache import ImageCaptionCache
 from .utils.token_counter import TokenCounter
 
 PLUGIN_NAME = "astrbot_plugin_chat_echo"
 PROACTIVE_WINDOW_SIZE = 10
 
 
-@register("astrbot_plugin_chat_echo", "AMYdd00", "主动接话插件", "1.0.4")
+@register("astrbot_plugin_chat_echo", "AMYdd00", "主动接话插件", "1.0.5")
 class EchoPlugin(Star):
     def __init__(self, context: Context, config=None):
         super().__init__(context)
@@ -38,6 +39,7 @@ class EchoPlugin(Star):
 
         data_dir = StarTools.get_data_dir("chat_echo")
         self.token_counter = TokenCounter(data_dir)
+        self.caption_cache = ImageCaptionCache(Path(data_dir))
 
         # Upgrade config prompts and initialize config helper
         upgrade_config(self.config, Path(data_dir), self.logger)
@@ -123,7 +125,11 @@ class EchoPlugin(Star):
             msg_content = event.get_message_outline()
 
         image_urls = await extract_image_urls(event)
-        if image_urls and self.config_helper.enable_image_caption():
+        if (
+            image_urls
+            and self.config_helper.enable_image_caption()
+            and self.config_helper.enable_keyword_on_image()
+        ):
             captions = []
             for url in image_urls:
                 caption = await self.get_image_caption(url, umo)
@@ -218,8 +224,28 @@ class EchoPlugin(Star):
 
             return jsonify({"status": "error", "message": str(e)})
 
-    async def get_image_caption(self, image_url: str, umo: str) -> str:
+    async def get_image_caption(
+        self, image_url: str, umo: str, force: bool = False
+    ) -> str:
         """Call LLM provider to get description/caption for a given image URL."""
+        # Query cache first
+        img_hash = await self.caption_cache.get_hash(image_url)
+        cached = self.caption_cache.get(img_hash)
+        if cached:
+            self.logger.info(
+                f"[ImageCache] Hit cache for image {image_url[:60]}... -> {cached[:30]}"
+            )
+            return cached
+
+        # Check probability for new image captioning
+        if not force and not is_probability_hit(
+            self.config_helper.image_caption_probability()
+        ):
+            self.logger.info(
+                f"[ImageCache] Cache miss for image {image_url[:60]}..., but skipped captioning due to probability constraint ({self.config_helper.image_caption_probability()}%)."
+            )
+            return ""
+
         provider_id = self.config_helper.image_caption_provider()
         global_cfg = self.context.get_config(umo=umo)
 
@@ -250,7 +276,9 @@ class EchoPlugin(Star):
             )
             resp = await prov.text_chat(prompt=prompt, image_urls=[image_url])
             if resp and resp.completion_text:
-                return resp.completion_text.strip()
+                caption = resp.completion_text.strip()
+                self.caption_cache.set(img_hash, caption)
+                return caption
         except Exception as e:
             self.logger.exception(f"Failed to get image caption: {e}")
 
