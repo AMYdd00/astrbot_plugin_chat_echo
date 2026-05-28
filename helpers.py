@@ -1,7 +1,7 @@
 import random
 
 from astrbot.api.event import AstrMessageEvent
-from astrbot.core.message.components import Image as ImageComponent
+from astrbot.api.message_components import Image as ImageComponent
 
 
 async def extract_image_urls(event: AstrMessageEvent) -> list:

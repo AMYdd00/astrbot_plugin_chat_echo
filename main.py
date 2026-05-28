@@ -32,7 +32,7 @@ PLUGIN_NAME = "astrbot_plugin_chat_echo"
 PROACTIVE_WINDOW_SIZE = 10
 
 
-@register("astrbot_plugin_chat_echo", "AMYdd00", "主动接话插件", "1.0.5")
+@register("astrbot_plugin_chat_echo", "AMYdd00", "主动接话插件", "1.0.6")
 class EchoPlugin(Star):
     def __init__(self, context: Context, config=None):
         super().__init__(context)
@@ -248,16 +248,17 @@ class EchoPlugin(Star):
         # 1. Check message components
         for comp in event.get_messages():
             if isinstance(comp, At):
-                if str(comp.qq) == str(self_id):
+                at_target = str(getattr(comp, 'qq', getattr(comp, 'target', '')))
+                if at_target == str(self_id):
                     is_at_bot = True
                 elif (
                     persona_name
                     and persona_name != "default"
-                    and comp.name
-                    and persona_name.lower() in comp.name.lower()
+                    and getattr(comp, 'name', '')
+                    and persona_name.lower() in getattr(comp, 'name', '').lower()
                 ):
                     is_at_bot = True
-                elif str(comp.qq) != "all":
+                elif at_target and at_target != "all":
                     is_at_other = True
             elif isinstance(comp, Reply):
                 if str(comp.sender_id) == str(self_id):

@@ -1,4 +1,3 @@
 # astrbot_plugin_chat_echo 依赖
-# 本插件无额外第三方依赖，所有 API 均由 AstrBot 框架提供
-
-
+Pillow>=10.0.0
+httpx

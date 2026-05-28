@@ -2,7 +2,7 @@
 
 [![AstrBot](https://img.shields.io/badge/AstrBot-Plugin-blue)](https://github.com/AstrBotDevs/AstrBot)
 [![License](https://img.shields.io/badge/License-AGPLv3-green)](LICENSE)
-[![Version](https://img.shields.io/badge/version-1.0.0-blueviolet)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-1.0.6-blueviolet)](CHANGELOG.md)
 
 ## 简介
 
@@ -29,6 +29,10 @@
 - ✅ **冷却机制** — 防止 Bot 过于频繁发言（支持回复冷却和主动冷却独立配置）
 - ✅ **自定义提示词** — 分析、生成、主动参与的 LLM 提示词均可自由定制
 - ✅ **Token 用量统计** — 内置 WebUI 面板，按群/按天展示 Token 消耗趋势
+- ✅ **关键词监听回复** — 检测群消息中预定义的关键词，命中后 LLM 自动生成回复参与对话
+- ✅ **图片转述缓存** — SQLite 哈希缓存图片转述结果，避免重复请求 API，节省 Token 额度
+- ✅ **延迟转述** — 平时发图 0 API 消耗，仅在 Bot 回复构建上下文时对未转述图片强制转述
+- ✅ **Token 用量统计** — 内置 WebUI 面板，按群/按天展示 Token 消耗趋势及多群对比
 - ✅ **多平台兼容** — 支持 aiocqhttp / telegram / discord / lark / qq_official / dingtalk / kook / slack / mattermost / satori
 
 ## 配置说明

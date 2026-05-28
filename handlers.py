@@ -1,6 +1,4 @@
-import datetime
 import time
-import zoneinfo
 
 from astrbot.api.event import AstrMessageEvent
 
@@ -8,53 +6,6 @@ from .helpers import extract_image_urls
 from .tracker import ConversationTracker
 
 MAX_CONTEXT_MESSAGES = 20
-
-
-def build_system_reminder(event: AstrMessageEvent, global_cfg: dict) -> str:
-    """Build a <system_reminder> block matching the formatting of astr_main_agent."""
-    provider_settings = global_cfg.get("provider_settings", {})
-    timezone = global_cfg.get("timezone")
-
-    system_parts = []
-    if provider_settings.get("identifier"):
-        try:
-            user_id = event.message_obj.sender.user_id
-            user_nickname = event.message_obj.sender.nickname
-            if user_id:
-                system_parts.append(
-                    f"User ID: {user_id}, Nickname: {user_nickname or ''}"
-                )
-        except Exception:
-            pass
-
-    if provider_settings.get("group_name_display") and event.message_obj.group_id:
-        try:
-            if event.message_obj.group and event.message_obj.group.group_name:
-                system_parts.append(f"Group name: {event.message_obj.group.group_name}")
-        except Exception:
-            pass
-
-    if provider_settings.get("datetime_system_prompt"):
-        current_time = None
-        if timezone:
-            try:
-                now = datetime.datetime.now(zoneinfo.ZoneInfo(timezone))
-                current_time = now.strftime("%Y-%m-%d %H:%M (%Z)")
-            except Exception:
-                pass
-        if not current_time:
-            try:
-                current_time = (
-                    datetime.datetime.now().astimezone().strftime("%Y-%m-%d %H:%M (%Z)")
-                )
-            except Exception:
-                pass
-        if current_time:
-            system_parts.append(f"Current datetime: {current_time}")
-
-    if system_parts:
-        return "<system_reminder>" + "\n".join(system_parts) + "</system_reminder>"
-    return ""
 
 
 def build_analyze_context(tracker: ConversationTracker) -> tuple[str, list[str]]:
