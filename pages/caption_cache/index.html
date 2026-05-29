@@ -34,6 +34,15 @@ header .sub{font-size:18px;color:var(--text2)}
 .time-filter input[type="date"]{padding:6px 10px;border-radius:8px;border:1px solid var(--input-border);background:var(--input-bg);color:var(--text);font-size:13px;font-family:inherit;outline:none}
 .time-filter input[type="date"]:focus{border-color:var(--accent)}
 
+/* Search box */
+.search-box{position:relative;flex:1;min-width:200px;max-width:400px}
+.search-box input{width:100%;padding:9px 36px 9px 34px;border-radius:12px;border:1px solid var(--input-border);background:var(--input-bg);color:var(--text);font-size:13px;font-family:inherit;outline:none;transition:border-color .25s,box-shadow .25s}
+.search-box input:focus{border-color:var(--accent);box-shadow:0 0 0 3px rgba(0,113,227,0.1)}
+.search-box input::placeholder{color:var(--text3)}
+.search-box .search-icon{position:absolute;left:10px;top:50%;transform:translateY(-50%);font-size:14px;color:var(--text3);pointer-events:none}
+.search-box .search-clear{position:absolute;right:8px;top:50%;transform:translateY(-50%);border:none;background:var(--segment-bg);color:var(--text2);width:20px;height:20px;border-radius:50%;font-size:11px;cursor:pointer;display:none;align-items:center;justify-content:center;line-height:1;padding:0}
+.search-box .search-clear.show{display:flex}
+
 /* Cache List */
 .cache-list{display:flex;flex-direction:column;gap:10px;margin-bottom:24px}
 .cache-item{display:flex;gap:16px;padding:16px 20px;background:var(--card);backdrop-filter:blur(32px) saturate(140%);-webkit-backdrop-filter:blur(32px) saturate(140%);border:1px solid var(--card-border);border-radius:16px;box-shadow:var(--card-shadow);transition:all .3s;opacity:0;transform:translateX(-20px);align-items:flex-start}
@@ -116,6 +125,11 @@ header .sub{font-size:18px;color:var(--text2)}
 <button class="btn btn-accent btn-sm" id="btnClearBefore" onclick="confirmClearBefore()">清理</button>
 </div>
 </div>
+<div class="search-box">
+<span class="search-icon">🔍</span>
+<input type="text" id="searchInput" placeholder="搜索转述内容…">
+<button class="search-clear" id="searchClear" onclick="clearSearch()">✕</button>
+</div>
 </div>
 <div class="cache-list" id="cacheList"></div>
 <div class="load-more" id="loadMore">
@@ -170,6 +184,9 @@ const modalConfirmBtn=document.getElementById('modalConfirmBtn');
 const lightbox=document.getElementById('lightbox');
 const lightboxImg=document.getElementById('lightboxImg');
 const toast=document.getElementById('toast');
+const searchInput=document.getElementById('searchInput');
+const searchClear=document.getElementById('searchClear');
+let currentSearch='';
 
 // Format file size
 function fmtSize(bytes){
@@ -264,7 +281,9 @@ function escapeHtml(s){
 // Load items
 async function loadItems(append=false){
   try{
-    const r=await B.apiGet('caption_cache',{offset,limit:PAGE_SIZE});
+    const params={offset,limit:PAGE_SIZE};
+    if(currentSearch)params.search=currentSearch;
+    const r=await B.apiGet('caption_cache',params);
     const d=r&&r.data?r.data:r;
     const items=d.items||[];
     totalCount=d.total||0;
@@ -398,6 +417,28 @@ window.confirmClearBefore=function(){
       await Promise.all([loadStats(),loadItems()]);
     }catch(e){showToast('清理失败: '+e.message);}
   });
+};
+
+// Search with debounce
+let searchTimer=null;
+searchInput.addEventListener('input',()=>{
+  const val=searchInput.value.trim();
+  searchClear.classList.toggle('show',val.length>0);
+  clearTimeout(searchTimer);
+  searchTimer=setTimeout(()=>{
+    if(val===currentSearch)return;
+    currentSearch=val;
+    offset=0;allItems=[];
+    loadItems();
+  },350);
+});
+searchInput.addEventListener('keydown',e=>{
+  if(e.key==='Escape'){searchInput.value='';searchClear.classList.remove('show');if(currentSearch){currentSearch='';offset=0;allItems=[];loadItems();}}
+});
+window.clearSearch=function(){
+  searchInput.value='';searchClear.classList.remove('show');
+  if(currentSearch){currentSearch='';offset=0;allItems=[];loadItems();}
+  searchInput.focus();
 };
 
 // Keyboard: Escape to close modal/lightbox

@@ -573,16 +573,17 @@ class EchoPlugin(Star):
         return ""
 
     async def api_caption_cache_list(self):
-        """GET handler: paginated caption cache list."""
+        """GET handler: paginated caption cache list with optional search."""
         try:
             from quart import jsonify
             from quart import request as qreq
 
             offset = int(qreq.args.get("offset", 0)) if qreq else 0
             limit = int(qreq.args.get("limit", 20)) if qreq else 20
+            search = qreq.args.get("search", "").strip() if qreq else ""
             limit = min(limit, 100)
-            items = self.caption_cache.get_all(offset, limit)
-            total = self.caption_cache.get_count()
+            items = self.caption_cache.get_all(offset, limit, search=search)
+            total = self.caption_cache.get_count(search=search)
             return jsonify(
                 {
                     "status": "ok",
@@ -591,6 +592,7 @@ class EchoPlugin(Star):
                         "total": total,
                         "offset": offset,
                         "limit": limit,
+                        "search": search,
                     },
                 }
             )

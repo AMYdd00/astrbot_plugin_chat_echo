@@ -97,15 +97,27 @@ class ImageCaptionCache:
         except Exception as e:
             logger.error(f"Failed to write to caption cache: {e}")
 
-    def get_all(self, offset: int = 0, limit: int = 20) -> list[dict]:
-        """Retrieve paginated cache entries, ordered by creation time descending."""
+    def get_all(self, offset: int = 0, limit: int = 20, search: str = "") -> list[dict]:
+        """Retrieve paginated cache entries, ordered by creation time descending.
+
+        Args:
+            offset: Number of entries to skip.
+            limit: Maximum number of entries to return.
+            search: Optional keyword to filter by caption content (case-insensitive LIKE match).
+        """
         try:
             conn = sqlite3.connect(str(self.db_path))
             cursor = conn.cursor()
-            cursor.execute(
-                "SELECT img_hash, caption, created_at, image_url FROM caption_cache ORDER BY created_at DESC LIMIT ? OFFSET ?",
-                (limit, offset),
-            )
+            if search:
+                cursor.execute(
+                    "SELECT img_hash, caption, created_at, image_url FROM caption_cache WHERE caption LIKE ? ORDER BY created_at DESC LIMIT ? OFFSET ?",
+                    (f"%{search}%", limit, offset),
+                )
+            else:
+                cursor.execute(
+                    "SELECT img_hash, caption, created_at, image_url FROM caption_cache ORDER BY created_at DESC LIMIT ? OFFSET ?",
+                    (limit, offset),
+                )
             rows = cursor.fetchall()
             conn.close()
             return [
@@ -121,12 +133,18 @@ class ImageCaptionCache:
             logger.error(f"Failed to query caption cache list: {e}")
             return []
 
-    def get_count(self) -> int:
-        """Return total number of cached entries."""
+    def get_count(self, search: str = "") -> int:
+        """Return total number of cached entries, optionally filtered by search keyword."""
         try:
             conn = sqlite3.connect(str(self.db_path))
             cursor = conn.cursor()
-            cursor.execute("SELECT COUNT(*) FROM caption_cache")
+            if search:
+                cursor.execute(
+                    "SELECT COUNT(*) FROM caption_cache WHERE caption LIKE ?",
+                    (f"%{search}%",),
+                )
+            else:
+                cursor.execute("SELECT COUNT(*) FROM caption_cache")
             count = cursor.fetchone()[0]
             conn.close()
             return count
