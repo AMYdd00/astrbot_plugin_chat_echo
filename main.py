@@ -32,7 +32,7 @@ PLUGIN_NAME = "astrbot_plugin_chat_echo"
 PROACTIVE_WINDOW_SIZE = 10
 
 
-@register("astrbot_plugin_chat_echo", "AMYdd00, Yao-lin101", "主动接话插件", "1.1.0")
+@register("astrbot_plugin_chat_echo", "AMYdd00, Yao-lin101", "主动接话插件", "1.1.1")
 class EchoPlugin(Star):
     def __init__(self, context: Context, config=None):
         super().__init__(context)
