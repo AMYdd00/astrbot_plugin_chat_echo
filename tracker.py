@@ -111,10 +111,19 @@ class TrackerManager:
         return self.recent_messages.get(group_id, [])
 
     def is_active_thinking(self, group_id: str) -> bool:
-        return bool(self.active_thinking.get(group_id))
+        ts = self.active_thinking.get(group_id)
+        if not ts:
+            return False
+        if isinstance(ts, float) and time.time() - ts > 60.0:
+            self.active_thinking[group_id] = None
+            return False
+        return True
 
     def set_active_thinking(self, group_id: str, value: bool) -> None:
-        self.active_thinking[group_id] = value
+        if value:
+            self.active_thinking[group_id] = time.time()
+        else:
+            self.active_thinking[group_id] = None
 
     def is_proactive_flagged(self, group_id: str) -> bool:
         return bool(self.proactive_flag.get(group_id))
@@ -161,7 +170,9 @@ class TrackerManager:
 
     def get_state(self, group_id: str) -> dict:
         """Get current state for a group. Default: free/1.0."""
-        return self._current_state.get(group_id, {"name": "空闲", "activity": 1.0, "reason": ""})
+        return self._current_state.get(
+            group_id, {"name": "空闲", "activity": 1.0, "reason": ""}
+        )
 
     def set_state(self, group_id: str, state: dict) -> None:
         self._current_state[group_id] = state

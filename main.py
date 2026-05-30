@@ -6,7 +6,6 @@ Refactored for improved maintainability.
 
 import asyncio
 import json
-import random
 import time
 from datetime import datetime
 from pathlib import Path
@@ -210,6 +209,10 @@ class EchoPlugin(Star):
         if not event.get_extra("chat_echo_triggered"):
             return
 
+        # Release active thinking lock on completion or error
+        group_id = str(event.get_group_id())
+        self.tracker_manager.set_active_thinking(group_id, False)
+
         original_contexts = event.get_extra("chat_echo_original_contexts")
         if original_contexts is None:
             return
@@ -259,6 +262,14 @@ class EchoPlugin(Star):
         umo = event.unified_msg_origin
         if not self.config_helper.is_group_allowed(group_id, umo):
             return
+
+        # Filter out command/wake-up prefixes
+        msg_text = event.message_str or ""
+        prefixes = self.config_helper.filter_prefixes()
+        if prefixes and msg_text:
+            stripped = msg_text.strip()
+            if any(stripped.startswith(p) for p in prefixes):
+                return
 
         now = time.time()
 
@@ -375,7 +386,12 @@ class EchoPlugin(Star):
                         )
                         self.tracker_manager.set_state(
                             group_id,
-                            {"name": "空闲", "activity": 1.0, "reason": "被@吵醒了", "manual": True},
+                            {
+                                "name": "空闲",
+                                "activity": 1.0,
+                                "reason": "被@吵醒了",
+                                "manual": True,
+                            },
                         )
                         self.tracker_manager.clear_wake_hits(group_id)
                     else:
@@ -435,8 +451,13 @@ class EchoPlugin(Star):
                                     self.config_helper.generator_provider(),
                                 )
                                 return None
-                        finally:
+                            else:
+                                self.tracker_manager.set_active_thinking(
+                                    group_id, False
+                                )
+                        except Exception:
                             self.tracker_manager.set_active_thinking(group_id, False)
+                            raise
                 else:
                     self.logger.info(
                         f"[Keyword] Keyword '{matched_keyword}' matched but probability roll missed."
@@ -489,17 +510,21 @@ class EchoPlugin(Star):
             return
         if is_probability_hit(active_prob):
             self.tracker_manager.set_active_thinking(group_id, True)
-            res = await handle_proactive(self, event, msg, window)
-            if res:
-                event.is_at_or_wake_command = True
-                event.set_extra("chat_echo_triggered", True)
-                event.set_extra("chat_echo_mode", "proactive")
-                event.set_extra(
-                    "selected_provider", self.config_helper.generator_provider()
-                )
-                return None
-            else:
+            try:
+                res = await handle_proactive(self, event, msg, window)
+                if res:
+                    event.is_at_or_wake_command = True
+                    event.set_extra("chat_echo_triggered", True)
+                    event.set_extra("chat_echo_mode", "proactive")
+                    event.set_extra(
+                        "selected_provider", self.config_helper.generator_provider()
+                    )
+                    return None
+                else:
+                    self.tracker_manager.set_active_thinking(group_id, False)
+            except Exception:
                 self.tracker_manager.set_active_thinking(group_id, False)
+                raise
 
     async def page_token_stats(self):
         try:
@@ -793,6 +818,7 @@ class EchoPlugin(Star):
                 schedule = json.loads(text.strip())
             except json.JSONDecodeError:
                 import re
+
                 m = re.search(r"\[.*\]", text, re.DOTALL)
                 if m:
                     try:
@@ -814,7 +840,7 @@ class EchoPlugin(Star):
 
     def _apply_schedule(self, group_id: str, schedule: list, now_dt: datetime) -> None:
         """Set current state from schedule and start timer for next transition."""
-        now_ts = time.time()
+        time.time()
         today = now_dt.date()
         current_match = None
         next_item = None
@@ -839,11 +865,14 @@ class EchoPlugin(Star):
         if current_state.get("manual"):
             self.tracker_manager.set_state(group_id, {**current_state, "manual": False})
         elif current_match:
-            self.tracker_manager.set_state(group_id, {
-                "name": current_match.get("state", "空闲"),
-                "activity": float(current_match.get("activity", 1.0)),
-                "reason": current_match.get("reason", ""),
-            })
+            self.tracker_manager.set_state(
+                group_id,
+                {
+                    "name": current_match.get("state", "空闲"),
+                    "activity": float(current_match.get("activity", 1.0)),
+                    "reason": current_match.get("reason", ""),
+                },
+            )
             self.logger.info(
                 f"[HumanMode] {group_id} state: {current_match.get('state')} (activity={current_match.get('activity')})"
             )
@@ -854,13 +883,16 @@ class EchoPlugin(Star):
                 target = datetime(today.year, today.month, today.day, h, m)
                 if target <= now_dt:
                     from datetime import timedelta
+
                     target += timedelta(days=1)
                 delay = (target - datetime.now()).total_seconds()
                 if delay > 0:
+
                     async def _transition():
                         await asyncio.sleep(delay)
                         dt = datetime.now()
                         self._apply_schedule(group_id, schedule, dt)
+
                     task = asyncio.create_task(_transition())
                     self.tracker_manager.set_schedule_timer(group_id, task)
             except (ValueError, AttributeError):
