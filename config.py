@@ -139,29 +139,39 @@ def parse_group_entry(entry) -> tuple[str, int | None, int | None]:
         return group_id, reply_p, active_p
 
 
-def parse_keyword_rule(entry) -> tuple[str, int | None]:
-    """Parse a keyword rule entry. Supports both old string format and new dict format."""
-    # New template_list dict format
+def _split_list(value: str | None) -> list[str]:
+    """Split comma-separated string into list of trimmed, non-empty items."""
+    if not value:
+        return []
+    return [s.strip() for s in str(value).split(",") if s.strip()]
+
+
+def parse_keyword_rule(entry) -> tuple[list[str], set[str], int | None]:
+    """Parse a keyword rule entry. Returns (keywords, groups_set, probability).
+    Supports both old string format and new dict format.
+    """
+    # New template_list dict format (v1.1.3+)
     if isinstance(entry, dict):
-        kw = entry.get("keyword", "").strip()
+        kw_str = entry.get("keywords", entry.get("keyword", ""))
+        groups_str = entry.get("groups", "")
+        keywords = _split_list(kw_str)
+        groups = set(_split_list(groups_str))
         prob = entry.get("probability")
         if isinstance(prob, int) and prob >= 0:
-            return kw, prob
-        return kw, None
+            return keywords, groups, prob
+        return keywords, groups, None
 
     # Old string format: "keyword" or "keyword:probability"
     entry = str(entry).strip()
     if not entry:
-        return "", None
+        return [], set(), None
     if ":" in entry:
         parts = entry.rsplit(":", 1)
         keyword = parts[0].strip()
         prob_str = parts[1].strip()
-        if prob_str.isdigit():
-            return keyword, int(prob_str)
-        else:
-            return entry, None
-    return entry, None
+        prob = int(prob_str) if prob_str.isdigit() else None
+        return [keyword] if keyword else [], set(), prob
+    return [entry], set(), None
 
 
 class ConfigHelper:
@@ -170,7 +180,7 @@ class ConfigHelper:
     def __init__(self, config):
         self.config = config
         self.parsed_groups: list[tuple[str, int | None, int | None]] = []
-        self.parsed_keywords: list[tuple[str, int | None]] = []
+        self.parsed_keywords: list[tuple[list[str], set[str], int | None]] = []
         self.refresh()
 
     def refresh(self):
@@ -206,6 +216,20 @@ class ConfigHelper:
 
     def keyword_default_probability(self) -> int:
         return int(self.cfg("keyword_default_probability", 100))
+
+    def get_matched_keyword(self, group_id: str, content: str) -> tuple[str | None, int | None]:
+        """Check if content matches any keyword rule applicable to this group.
+        Returns (matched_keyword, probability) or (None, None).
+        """
+        content_lower = content.lower()
+        for keywords, groups, prob in self.parsed_keywords:
+            # Check group filter
+            if groups and group_id not in groups:
+                continue
+            for kw in keywords:
+                if kw.lower() in content_lower:
+                    return kw, prob
+        return None, None
 
     def track_timeout(self) -> int:
         return int(self.cfg("track_timeout_seconds", 120))

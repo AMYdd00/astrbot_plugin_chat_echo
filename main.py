@@ -406,18 +406,11 @@ class EchoPlugin(Star):
             self.config_helper.enable_keyword_trigger()
             and self.config_helper.parsed_keywords
         ):
-            matched_keyword = None
-            matched_prob = None
-            content_lower = msg_content.lower()
-            for kw, prob in self.config_helper.parsed_keywords:
-                if kw.lower() in content_lower:
-                    matched_keyword = kw
-                    matched_prob = (
-                        prob
-                        if prob is not None
-                        else self.config_helper.keyword_default_probability()
-                    )
-                    break
+            matched_keyword, matched_prob = self.config_helper.get_matched_keyword(
+                group_id, msg_content
+            )
+            if matched_prob is None:
+                matched_prob = self.config_helper.keyword_default_probability()
 
             if matched_keyword is not None:
                 self.logger.info(

@@ -145,10 +145,16 @@
       "keyword_template": {
         "name": "关键词规则",
         "items": {
-          "keyword": {
+          "groups": {
+            "type": "string",
+            "description": "生效群号",
+            "hint": "多个群号用逗号分隔，留空则所有群生效",
+            "default": ""
+          },
+          "keywords": {
             "type": "string",
             "description": "关键词",
-            "hint": "要匹配的兴趣关键词",
+            "hint": "多个关键词用逗号分隔，如 原神,星铁",
             "default": ""
           },
           "probability": {
