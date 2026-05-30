@@ -140,10 +140,11 @@ def parse_group_entry(entry) -> tuple[str, int | None, int | None]:
 
 
 def _split_list(value: str | None) -> list[str]:
-    """Split comma-separated string into list of trimmed, non-empty items."""
+    """Split comma-separated string (supports both Chinese and English commas)."""
     if not value:
         return []
-    return [s.strip() for s in str(value).split(",") if s.strip()]
+    normalized = str(value).replace("，", ",")
+    return [s.strip() for s in normalized.split(",") if s.strip()]
 
 
 def parse_keyword_rule(entry) -> tuple[list[str], set[str], int | None]:
@@ -223,13 +224,28 @@ class ConfigHelper:
         """
         content_lower = content.lower()
         for keywords, groups, prob in self.parsed_keywords:
-            # Check group filter
-            if groups and group_id not in groups:
+            # Check group filter: support group_id, UMO, and UMO suffix matching
+            if groups and not self._match_group_set(groups, group_id):
                 continue
             for kw in keywords:
                 if kw.lower() in content_lower:
                     return kw, prob
         return None, None
+
+    def _match_group_set(self, groups: set[str], group_id: str) -> bool:
+        """Check if group_id matches any entry in the groups set.
+        Supports direct group_id match and UMO suffix match (e.g., Bot:GroupMessage:123).
+        """
+        for g in groups:
+            if g == group_id:
+                return True
+            # UMO suffix match: the last segment after the last ':' equals group_id
+            try:
+                if ":" in g and g.rsplit(":", 1)[-1] == group_id:
+                    return True
+            except (AttributeError, IndexError, ValueError):
+                pass
+        return False
 
     def track_timeout(self) -> int:
         return int(self.cfg("track_timeout_seconds", 120))
