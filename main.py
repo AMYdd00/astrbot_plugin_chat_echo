@@ -259,6 +259,50 @@ class EchoPlugin(Star):
         bot_text = extract_sent_text(event)
         await start_tracking(self, event, bot_text)
 
+    @filter.command("bot在干嘛")
+    async def cmd_bot_status(self, event: AstrMessageEvent):
+        """查询 Bot 当前状态"""
+        if not is_group_event(event):
+            yield event.plain_result("此命令仅支持群聊环境")
+            return
+        if not self.config_helper.human_like_mode():
+            yield event.plain_result("伪人模式未开启")
+            return
+        group_id = str(event.get_group_id())
+        if not self.tracker_manager.get_schedule(group_id):
+            await self._ensure_schedule(group_id, event.unified_msg_origin, None)
+        state = self.tracker_manager.get_state(group_id)
+        name = state.get("name", "空闲")
+        reason = state.get("reason", "")
+        activity = state.get("activity", 1.0)
+        msg = f"{name}（活跃度: {activity}）— {reason}" if reason else f"{name}（活跃度: {activity}）"
+        yield event.plain_result(msg)
+
+    @filter.command("bot计划表")
+    async def cmd_bot_schedule(self, event: AstrMessageEvent):
+        """查询 Bot 计划表"""
+        if not is_group_event(event):
+            yield event.plain_result("此命令仅支持群聊环境")
+            return
+        if not self.config_helper.human_like_mode():
+            yield event.plain_result("伪人模式未开启")
+            return
+        group_id = str(event.get_group_id())
+        if not self.tracker_manager.get_schedule(group_id):
+            await self._ensure_schedule(group_id, event.unified_msg_origin, None)
+        schedule = self.tracker_manager.get_schedule(group_id)
+        if not schedule:
+            yield event.plain_result("暂无计划表")
+            return
+        lines = ["Bot 当前计划表："]
+        for item in schedule:
+            s = item.get("state", "?")
+            a = item.get("activity", 0)
+            u = item.get("until", "?")
+            r = item.get("reason", "")
+            lines.append(f"{s} (活跃度 {a}) 至 {u} — {r}" if r else f"{s} (活跃度 {a}) 至 {u}")
+        yield event.plain_result("\n".join(lines))
+
     @filter.event_message_type(EventMessageType.ALL)
     async def on_group_message(self, event: AstrMessageEvent):
         """Listen to all group messages to collect replies or initiate proactive participation."""
@@ -437,7 +481,7 @@ class EchoPlugin(Star):
                                     "selected_provider",
                                     self.config_helper.generator_provider(),
                                 )
-                                return None
+                                return
                         finally:
                             self.tracker_manager.set_active_thinking(group_id, False)
                 else:
@@ -480,7 +524,7 @@ class EchoPlugin(Star):
                                 "selected_provider", self.config_helper.generator_provider()
                             )
                             self.tracker_manager.set_active_thinking(group_id, True)
-                            return None
+                            return
                         return
                     return
 
@@ -545,7 +589,7 @@ class EchoPlugin(Star):
                 event.set_extra(
                     "selected_provider", self.config_helper.generator_provider()
                 )
-                return None
+                return
             else:
                 self.tracker_manager.set_active_thinking(group_id, False)
             return
@@ -617,7 +661,7 @@ class EchoPlugin(Star):
         except asyncio.CancelledError:
             pass
         except Exception:
-            self.logger.exception(f"[Batch] Error in scheduled reply flush: {e}")
+            self.logger.exception("[Batch] Error in scheduled reply flush")
 
     async def _flush_batch_reply(self, tracker, event, group_id, umo):
         """Flush accumulated batch messages for reply analysis and trigger if appropriate."""
@@ -662,7 +706,7 @@ class EchoPlugin(Star):
         except asyncio.CancelledError:
             return
         except Exception:
-            self.logger.exception(f"[ProactiveBatch] Error in scheduled proactive flush: {e}")
+            self.logger.exception("[ProactiveBatch] Error in scheduled proactive flush")
             return
 
     async def _flush_batch_proactive(self, event, group_id, umo):
@@ -1053,60 +1097,6 @@ class EchoPlugin(Star):
                     self.tracker_manager.set_schedule_timer(group_id, task)
             except (ValueError, AttributeError):
                 pass
-
-    @filter.command("bot在干嘛")
-    async def cmd_bot_status(self, event: AstrMessageEvent):
-        """Query bot's current human-like mode status."""
-        if not is_group_event(event):
-            return
-        group_id = str(event.get_group_id())
-        umo = event.unified_msg_origin
-        if not self.config_helper.is_group_allowed(group_id, umo):
-            return
-        if not self.config_helper.human_like_mode():
-            return
-        state = self.tracker_manager.get_state(group_id)
-        name = state.get("name", "空闲")
-        reason = state.get("reason", "")
-        activity = state.get("activity", 1.0)
-        if reason:
-            msg = f"{name}（活跃度: {activity}）— {reason}"
-        else:
-            msg = f"{name}（活跃度: {activity}）"
-        result = event.make_result()
-        result.message(msg)
-        yield result
-
-    @filter.command("bot计划表")
-    async def cmd_bot_schedule(self, event: AstrMessageEvent):
-        """Query bot's current full schedule."""
-        if not is_group_event(event):
-            return
-        group_id = str(event.get_group_id())
-        umo = event.unified_msg_origin
-        if not self.config_helper.is_group_allowed(group_id, umo):
-            return
-        if not self.config_helper.human_like_mode():
-            return
-        schedule = self.tracker_manager.get_schedule(group_id)
-        if not schedule:
-            result = event.make_result()
-            result.message("暂无计划表")
-            yield result
-            return
-        lines = ["Bot 当前计划表："]
-        for item in schedule:
-            state = item.get("state", "?")
-            activity = item.get("activity", 0)
-            until = item.get("until", "?")
-            reason = item.get("reason", "")
-            if reason:
-                lines.append(f"{state} (活跃度 {activity}) 至 {until} — {reason}")
-            else:
-                lines.append(f"{state} (活跃度 {activity}) 至 {until}")
-        result = event.make_result()
-        result.message("\n".join(lines))
-        yield result
 
     async def terminate(self):
         self.logger.info("主动接话插件卸载中...")
