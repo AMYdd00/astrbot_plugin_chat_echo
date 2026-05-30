@@ -71,11 +71,11 @@ async def compress_image_if_needed(image_url: str) -> str:
     If no compression is needed or it fails, returns the original image_url (or downloaded path).
     """
     import os
-    import base64
     import uuid
-    from io import BytesIO
     from pathlib import Path
+
     from PIL import Image as PILImage
+
     from astrbot import logger
     from astrbot.core.utils.astrbot_path import get_astrbot_temp_path
     from astrbot.core.utils.io import download_image_by_url

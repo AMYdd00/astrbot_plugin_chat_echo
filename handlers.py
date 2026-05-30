@@ -265,9 +265,8 @@ async def handle_proactive(
 
     except Exception as e:
         plugin.logger.exception(f"[Proactive] Error in handle_proactive: {e}")
-        return False
-    finally:
         plugin.tracker_manager.set_active_thinking(group_id, False)
+        return False
 
 
 async def handle_keyword(

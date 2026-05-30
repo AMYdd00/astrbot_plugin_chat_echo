@@ -276,3 +276,6 @@ class ConfigHelper:
 
     def typing_delay_max(self) -> float:
         return float(self.cfg("typing_delay_max", 4.0))
+
+    def filter_prefixes(self) -> list:
+        return self.cfg("filter_prefixes", ["/", "$", "!", "#"])
