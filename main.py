@@ -6,6 +6,7 @@ Refactored for improved maintainability.
 
 import asyncio
 import json
+import random
 import time
 from datetime import datetime
 from pathlib import Path
@@ -18,7 +19,16 @@ from astrbot.api.star import Context, Star, StarTools, register
 from astrbot.core.provider.entities import ProviderRequest
 
 from .config import ConfigHelper, upgrade_config
-from .handlers import handle_keyword, handle_proactive, handle_reply, start_tracking
+from .handlers import (
+    handle_keyword,
+    handle_proactive,
+    handle_reply,
+    handle_reply_batch,
+    handle_proactive_batch,
+    prewarm_captions,
+    start_tracking,
+    ensure_context_captions,
+)
 from .helpers import (
     extract_bot_text,
     extract_image_urls,
@@ -35,7 +45,7 @@ PLUGIN_NAME = "astrbot_plugin_chat_echo"
 PROACTIVE_WINDOW_SIZE = 10
 
 
-@register("astrbot_plugin_chat_echo", "AMYdd00, Yao-lin101", "主动接话插件", "1.1.2")
+@register("astrbot_plugin_chat_echo", "AMYdd00, Yao-lin101", "主动接话插件", "1.1.3")
 class EchoPlugin(Star):
     def __init__(self, context: Context, config=None):
         super().__init__(context)
@@ -107,7 +117,8 @@ class EchoPlugin(Star):
     async def initialize(self):
         self.logger.info(
             f"主动接话插件初始化完成 | 触发模式: {self.config_helper.trigger_mode()} | "
-            f"关键词监听: {self.config_helper.enable_keyword_trigger()} (规则数: {len(self.config_helper.parsed_keywords)})"
+            f"关键词监听: {self.config_helper.enable_keyword_trigger()} (规则数: {len(self.config_helper.parsed_keywords)}) | "
+            f"批次分析: {self.config_helper.batch_analysis_enabled()}"
         )
         self.token_counter.start()
 
@@ -209,10 +220,6 @@ class EchoPlugin(Star):
         if not event.get_extra("chat_echo_triggered"):
             return
 
-        # Release active thinking lock on completion or error
-        group_id = str(event.get_group_id())
-        self.tracker_manager.set_active_thinking(group_id, False)
-
         original_contexts = event.get_extra("chat_echo_original_contexts")
         if original_contexts is None:
             return
@@ -252,6 +259,50 @@ class EchoPlugin(Star):
         bot_text = extract_sent_text(event)
         await start_tracking(self, event, bot_text)
 
+    @filter.command("bot在干嘛")
+    async def cmd_bot_status(self, event: AstrMessageEvent):
+        """查询 Bot 当前状态"""
+        if not is_group_event(event):
+            yield event.plain_result("此命令仅支持群聊环境")
+            return
+        if not self.config_helper.human_like_mode():
+            yield event.plain_result("伪人模式未开启")
+            return
+        group_id = str(event.get_group_id())
+        if not self.tracker_manager.get_schedule(group_id):
+            await self._ensure_schedule(group_id, event.unified_msg_origin, None)
+        state = self.tracker_manager.get_state(group_id)
+        name = state.get("name", "空闲")
+        reason = state.get("reason", "")
+        activity = state.get("activity", 1.0)
+        msg = f"{name}（活跃度: {activity}）— {reason}" if reason else f"{name}（活跃度: {activity}）"
+        yield event.plain_result(msg)
+
+    @filter.command("bot计划表")
+    async def cmd_bot_schedule(self, event: AstrMessageEvent):
+        """查询 Bot 计划表"""
+        if not is_group_event(event):
+            yield event.plain_result("此命令仅支持群聊环境")
+            return
+        if not self.config_helper.human_like_mode():
+            yield event.plain_result("伪人模式未开启")
+            return
+        group_id = str(event.get_group_id())
+        if not self.tracker_manager.get_schedule(group_id):
+            await self._ensure_schedule(group_id, event.unified_msg_origin, None)
+        schedule = self.tracker_manager.get_schedule(group_id)
+        if not schedule:
+            yield event.plain_result("暂无计划表")
+            return
+        lines = ["Bot 当前计划表："]
+        for item in schedule:
+            s = item.get("state", "?")
+            a = item.get("activity", 0)
+            u = item.get("until", "?")
+            r = item.get("reason", "")
+            lines.append(f"{s} (活跃度 {a}) 至 {u} — {r}" if r else f"{s} (活跃度 {a}) 至 {u}")
+        yield event.plain_result("\n".join(lines))
+
     @filter.event_message_type(EventMessageType.ALL)
     async def on_group_message(self, event: AstrMessageEvent):
         """Listen to all group messages to collect replies or initiate proactive participation."""
@@ -262,14 +313,6 @@ class EchoPlugin(Star):
         umo = event.unified_msg_origin
         if not self.config_helper.is_group_allowed(group_id, umo):
             return
-
-        # Filter out command/wake-up prefixes
-        msg_text = event.message_str or ""
-        prefixes = self.config_helper.filter_prefixes()
-        if prefixes and msg_text:
-            stripped = msg_text.strip()
-            if any(stripped.startswith(p) for p in prefixes):
-                return
 
         now = time.time()
 
@@ -386,12 +429,7 @@ class EchoPlugin(Star):
                         )
                         self.tracker_manager.set_state(
                             group_id,
-                            {
-                                "name": "空闲",
-                                "activity": 1.0,
-                                "reason": "被@吵醒了",
-                                "manual": True,
-                            },
+                            {"name": "空闲", "activity": 1.0, "reason": "被@吵醒了", "manual": True},
                         )
                         self.tracker_manager.clear_wake_hits(group_id)
                     else:
@@ -408,22 +446,17 @@ class EchoPlugin(Star):
             self._activity_scale = 1.0
 
         # ====== Keyword Trigger (Route 3) ======
+        tracker = self.tracker_manager.get_tracker(group_id)
         if (
             self.config_helper.enable_keyword_trigger()
             and self.config_helper.parsed_keywords
+            and not (tracker and tracker.alive)  # 有活跃reply tracker时跳过关键词，让reply路由处理
         ):
-            matched_keyword = None
-            matched_prob = None
-            content_lower = msg_content.lower()
-            for kw, prob in self.config_helper.parsed_keywords:
-                if kw.lower() in content_lower:
-                    matched_keyword = kw
-                    matched_prob = (
-                        prob
-                        if prob is not None
-                        else self.config_helper.keyword_default_probability()
-                    )
-                    break
+            matched_keyword, matched_prob = self.config_helper.get_matched_keyword(
+                group_id, msg_content
+            )
+            if matched_prob is None:
+                matched_prob = self.config_helper.keyword_default_probability()
 
             if matched_keyword is not None:
                 self.logger.info(
@@ -450,49 +483,84 @@ class EchoPlugin(Star):
                                     "selected_provider",
                                     self.config_helper.generator_provider(),
                                 )
-                                return None
-                            else:
-                                self.tracker_manager.set_active_thinking(
-                                    group_id, False
-                                )
-                        except Exception:
+                                return
+                        finally:
                             self.tracker_manager.set_active_thinking(group_id, False)
-                            raise
                 else:
                     self.logger.info(
                         f"[Keyword] Keyword '{matched_keyword}' matched but probability roll missed."
                     )
 
-        # ====== Reply Mode (Route 1) ======
+        # ====== Reply Mode (Route 1) - Batch or Instant ======
         tracker = self.tracker_manager.get_tracker(group_id)
         if tracker and tracker.alive:
             if now > tracker.expire_at:
                 self.tracker_manager.cleanup_tracker(group_id)
+                # Clear any pending proactive buffer after tracker cleanup
+                self.tracker_manager.clear_proactive_buffer(group_id)
             else:
                 tracker.expire_at = now + self.config_helper.track_timeout()
+
+                # Also collect in legacy list (for compatibility with existing handlers)
                 tracker.collected.append(msg)
-                if tracker.analyzing or self.tracker_manager.is_active_thinking(
-                    group_id
-                ):
+
+                if tracker.analyzing or self.tracker_manager.is_active_thinking(group_id):
                     return
-                if is_probability_hit(
-                    self.config_helper.get_effective_reply_prob(group_id, umo)
-                ):
-                    tracker.analyzing = True
-                    res = await handle_reply(self, tracker, event)
-                    if res:
-                        event.is_at_or_wake_command = True
-                        event.set_extra("chat_echo_triggered", True)
-                        event.set_extra("chat_echo_mode", "reply")
-                        event.set_extra(
-                            "selected_provider", self.config_helper.generator_provider()
-                        )
-                        self.tracker_manager.set_active_thinking(group_id, True)
-                        return None
+
+                # Start background caption for message images (fire-and-forget)
+                if self.config_helper.enable_image_caption() and image_urls:
+                    await prewarm_captions(self, msg, umo)
+
+                if not self.config_helper.batch_analysis_enabled():
+                    # ---- Legacy instant analysis ----
+                    if is_probability_hit(
+                        self.config_helper.get_effective_reply_prob(group_id, umo)
+                    ):
+                        tracker.analyzing = True
+                        res = await handle_reply(self, tracker, event)
+                        if res:
+                            event.is_at_or_wake_command = True
+                            event.set_extra("chat_echo_triggered", True)
+                            event.set_extra("chat_echo_mode", "reply")
+                            event.set_extra(
+                                "selected_provider", self.config_helper.generator_provider()
+                            )
+                            self.tracker_manager.set_active_thinking(group_id, True)
+                            return
+                        return
                     return
+
+                # ---- Batch analysis mode ----
+                tracker.batch_mode = "reply"
+                trigger_now = self.tracker_manager.add_to_batch(tracker, msg, self)
+
+                if trigger_now:
+                    # Immediate flush: @bot or batch full
+                    self.logger.info(
+                        f"[Batch] Immediate flush triggered by {trigger_now['reason']} in group {group_id}"
+                    )
+                    await self._flush_batch_reply(tracker, event, group_id, umo)
+                    return
+
+                # Schedule or check dynamic silence
+                if tracker.batch_timer and not tracker.batch_timer.done():
+                    tracker.batch_timer.cancel()
+                    tracker.batch_timer = None
+
+                silence_delay = self.tracker_manager.compute_silence_delay(tracker, self)
+                # Also respect absolute timeout
+                max_wait = self.config_helper.max_batch_wait_seconds()
+                elapsed = now - tracker.batch_first_msg_time
+                remaining = max(0.5, min(silence_delay, max_wait - elapsed))
+                self.logger.debug(
+                    f"[Batch] Scheduling flush in {remaining:.1f}s for group {group_id} (silence={silence_delay:.1f}s, max_wait={max_wait}s)"
+                )
+                tracker.batch_timer = asyncio.create_task(
+                    self._schedule_batch_flush_reply(tracker, event, group_id, umo, remaining)
+                )
                 return
 
-        # ====== Proactive Mode (Route 2) ======
+        # ====== Proactive Mode (Route 2) - Batch or Instant ======
         if self.tracker_manager.is_active_thinking(
             group_id
         ) or self.tracker_manager.is_proactive_flagged(group_id):
@@ -508,23 +576,164 @@ class EchoPlugin(Star):
             return
         if self.tracker_manager.has_active_tracker(group_id):
             return
-        if is_probability_hit(active_prob):
+
+        if not is_probability_hit(active_prob):
+            return
+
+        if not self.config_helper.batch_analysis_enabled():
+            # ---- Legacy instant proactive ----
             self.tracker_manager.set_active_thinking(group_id, True)
-            try:
-                res = await handle_proactive(self, event, msg, window)
-                if res:
-                    event.is_at_or_wake_command = True
-                    event.set_extra("chat_echo_triggered", True)
-                    event.set_extra("chat_echo_mode", "proactive")
-                    event.set_extra(
-                        "selected_provider", self.config_helper.generator_provider()
-                    )
-                    return None
-                else:
-                    self.tracker_manager.set_active_thinking(group_id, False)
-            except Exception:
+            res = await handle_proactive(self, event, msg, window)
+            if res:
+                event.is_at_or_wake_command = True
+                event.set_extra("chat_echo_triggered", True)
+                event.set_extra("chat_echo_mode", "proactive")
+                event.set_extra(
+                    "selected_provider", self.config_helper.generator_provider()
+                )
+                return
+            else:
                 self.tracker_manager.set_active_thinking(group_id, False)
-                raise
+            return
+
+        # ---- Batch proactive mode ----
+        # Start background caption for message images
+        if self.config_helper.enable_image_caption() and image_urls:
+            await prewarm_captions(self, msg, umo)
+
+        trigger_now = self.tracker_manager.add_to_proactive_batch(
+            group_id, msg, self
+        )
+        if trigger_now:
+            self.logger.info(
+                f"[ProactiveBatch] Immediate flush triggered by {trigger_now['reason']} in group {group_id}"
+            )
+            await self._flush_batch_proactive(event, group_id, umo)
+            return
+
+        # Schedule proactive batch flush
+        buf = self.tracker_manager.get_proactive_buffer(group_id)
+        if buf and buf.get("timer") and not buf["timer"].done():
+            buf["timer"].cancel()
+            buf["timer"] = None
+
+        buf = self.tracker_manager.ensure_proactive_buffer(group_id, umo)
+        buf["event"] = event
+        msg_count = len(buf["buffer"])
+        if msg_count <= 1:
+            silence_delay = float(self.config_helper.min_silence_seconds())
+        else:
+            total_span = now - buf["first_msg_time"]
+            avg_interval = total_span / (msg_count - 1)
+            threshold = avg_interval * self.config_helper.silence_multiplier()
+            silence_delay = max(
+                float(self.config_helper.min_silence_seconds()),
+                min(threshold, float(self.config_helper.max_silence_seconds())),
+            )
+
+        max_wait = self.config_helper.max_batch_wait_seconds()
+        elapsed = now - buf["first_msg_time"]
+        remaining = max(0.5, min(silence_delay, max_wait - elapsed))
+        self.logger.debug(
+            f"[ProactiveBatch] Scheduling flush in {remaining:.1f}s for group {group_id}"
+        )
+        buf["timer"] = asyncio.create_task(
+            self._schedule_batch_flush_proactive(group_id, remaining)
+        )
+
+    # ======== Batch flush methods ========
+
+    async def _schedule_batch_flush_reply(
+        self, tracker, event, group_id, umo, delay
+    ):
+        """Wait for dynamic silence period, then flush reply batch."""
+        try:
+            await asyncio.sleep(delay)
+            if not tracker.alive:
+                return
+            if tracker.analyzing or self.tracker_manager.is_active_thinking(group_id):
+                return
+            if not tracker.batch_buffer:
+                return
+
+            self.logger.info(
+                f"[Batch] Flushing reply batch ({len(tracker.batch_buffer)} msgs) in group {group_id}"
+            )
+            await self._flush_batch_reply(tracker, event, group_id, umo)
+        except asyncio.CancelledError:
+            pass
+        except Exception:
+            self.logger.exception("[Batch] Error in scheduled reply flush")
+
+    async def _flush_batch_reply(self, tracker, event, group_id, umo):
+        """Flush accumulated batch messages for reply analysis and trigger if appropriate."""
+        if tracker.analyzing or self.tracker_manager.is_active_thinking(group_id):
+            return
+
+        batch = self.tracker_manager.clear_batch_state(tracker)
+        if not batch:
+            return
+
+        tracker.analyzing = True
+        try:
+            res = await handle_reply_batch(self, tracker, event, batch)
+            if res:
+                event.is_at_or_wake_command = True
+                event.set_extra("chat_echo_triggered", True)
+                event.set_extra("chat_echo_mode", "reply")
+                event.set_extra(
+                    "selected_provider", self.config_helper.generator_provider()
+                )
+                self.tracker_manager.set_active_thinking(group_id, True)
+        finally:
+            tracker.analyzing = False
+
+    async def _schedule_batch_flush_proactive(self, group_id, delay):
+        """Wait for dynamic silence period, then flush proactive batch."""
+        try:
+            await asyncio.sleep(delay)
+            buf = self.tracker_manager.get_proactive_buffer(group_id)
+            if not buf or not buf["buffer"]:
+                return
+            if self.tracker_manager.is_active_thinking(group_id):
+                return
+
+            event = buf.get("event")
+            umo = buf.get("umo", "")
+            self.logger.info(
+                f"[ProactiveBatch] Flushing proactive batch ({len(buf['buffer'])} msgs) in group {group_id}"
+            )
+            if event:
+                await self._flush_batch_proactive(event, group_id, umo)
+        except asyncio.CancelledError:
+            return
+        except Exception:
+            self.logger.exception("[ProactiveBatch] Error in scheduled proactive flush")
+            return
+
+    async def _flush_batch_proactive(self, event, group_id, umo):
+        """Flush accumulated proactive batch for participation analysis."""
+        if self.tracker_manager.is_active_thinking(group_id):
+            return
+
+        batch = self.tracker_manager.clear_proactive_buffer(group_id)
+        if not batch:
+            return
+
+        self.tracker_manager.set_active_thinking(group_id, True)
+        try:
+            res = await handle_proactive_batch(self, event, batch)
+            if res:
+                event.is_at_or_wake_command = True
+                event.set_extra("chat_echo_triggered", True)
+                event.set_extra("chat_echo_mode", "proactive")
+                event.set_extra(
+                    "selected_provider", self.config_helper.generator_provider()
+                )
+        finally:
+            self.tracker_manager.set_active_thinking(group_id, False)
+
+    # ======== Web API handlers ========
 
     async def page_token_stats(self):
         try:
@@ -796,7 +1005,7 @@ class EchoPlugin(Star):
                 "每个时段定义：状态名、活跃度(0.0-1.0)、结束时间、简短理由。\n"
                 "活跃度含义：1.0=完全在线积极参与、0.5=偶尔看看、0.0=不可用(如睡觉)\n\n"
                 '输出JSON数组：[{"state": "状态名", "activity": 0.0-1.0, "until": "HH:MM", "reason": "简短理由"}]\n'
-                "只输出JSON，不要其他内容。"
+                "只输出JSON，不要其他内容。直接输出，不要思考过程。只需要规划接下来12小时即可。"
             )
             provider_id = self.config_helper.analyzer_provider()
             if not provider_id and umo:
@@ -818,7 +1027,6 @@ class EchoPlugin(Star):
                 schedule = json.loads(text.strip())
             except json.JSONDecodeError:
                 import re
-
                 m = re.search(r"\[.*\]", text, re.DOTALL)
                 if m:
                     try:
@@ -840,7 +1048,7 @@ class EchoPlugin(Star):
 
     def _apply_schedule(self, group_id: str, schedule: list, now_dt: datetime) -> None:
         """Set current state from schedule and start timer for next transition."""
-        time.time()
+        now_ts = time.time()
         today = now_dt.date()
         current_match = None
         next_item = None
@@ -865,14 +1073,11 @@ class EchoPlugin(Star):
         if current_state.get("manual"):
             self.tracker_manager.set_state(group_id, {**current_state, "manual": False})
         elif current_match:
-            self.tracker_manager.set_state(
-                group_id,
-                {
-                    "name": current_match.get("state", "空闲"),
-                    "activity": float(current_match.get("activity", 1.0)),
-                    "reason": current_match.get("reason", ""),
-                },
-            )
+            self.tracker_manager.set_state(group_id, {
+                "name": current_match.get("state", "空闲"),
+                "activity": float(current_match.get("activity", 1.0)),
+                "reason": current_match.get("reason", ""),
+            })
             self.logger.info(
                 f"[HumanMode] {group_id} state: {current_match.get('state')} (activity={current_match.get('activity')})"
             )
@@ -883,74 +1088,17 @@ class EchoPlugin(Star):
                 target = datetime(today.year, today.month, today.day, h, m)
                 if target <= now_dt:
                     from datetime import timedelta
-
                     target += timedelta(days=1)
                 delay = (target - datetime.now()).total_seconds()
                 if delay > 0:
-
                     async def _transition():
                         await asyncio.sleep(delay)
                         dt = datetime.now()
                         self._apply_schedule(group_id, schedule, dt)
-
                     task = asyncio.create_task(_transition())
                     self.tracker_manager.set_schedule_timer(group_id, task)
             except (ValueError, AttributeError):
                 pass
-
-    @filter.command("bot在干嘛")
-    async def cmd_bot_status(self, event: AstrMessageEvent):
-        """Query bot's current human-like mode status."""
-        if not is_group_event(event):
-            return
-        group_id = str(event.get_group_id())
-        umo = event.unified_msg_origin
-        if not self.config_helper.is_group_allowed(group_id, umo):
-            return
-        if not self.config_helper.human_like_mode():
-            return
-        state = self.tracker_manager.get_state(group_id)
-        name = state.get("name", "空闲")
-        reason = state.get("reason", "")
-        activity = state.get("activity", 1.0)
-        if reason:
-            msg = f"{name}（活跃度: {activity}）— {reason}"
-        else:
-            msg = f"{name}（活跃度: {activity}）"
-        result = event.make_result()
-        result.message(msg)
-        yield result
-
-    @filter.command("bot计划表")
-    async def cmd_bot_schedule(self, event: AstrMessageEvent):
-        """Query bot's current full schedule."""
-        if not is_group_event(event):
-            return
-        group_id = str(event.get_group_id())
-        umo = event.unified_msg_origin
-        if not self.config_helper.is_group_allowed(group_id, umo):
-            return
-        if not self.config_helper.human_like_mode():
-            return
-        schedule = self.tracker_manager.get_schedule(group_id)
-        if not schedule:
-            result = event.make_result()
-            result.message("暂无计划表")
-            yield result
-            return
-        lines = ["Bot 当前计划表："]
-        for item in schedule:
-            state = item.get("state", "?")
-            activity = item.get("activity", 0)
-            until = item.get("until", "?")
-            reason = item.get("reason", "")
-            if reason:
-                lines.append(f"{state} (活跃度 {activity}) 至 {until} — {reason}")
-            else:
-                lines.append(f"{state} (活跃度 {activity}) 至 {until}")
-        result = event.make_result()
-        result.message("\n".join(lines))
-        yield result
 
     async def terminate(self):
         self.logger.info("主动接话插件卸载中...")

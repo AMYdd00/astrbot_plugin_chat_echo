@@ -9,6 +9,39 @@
       "any_message"
     ]
   },
+  "enabled_groups": {
+    "type": "template_list",
+    "description": "群白名单（支持按群自定义概率）",
+    "hint": "只在这些群中启用。留空则所有群生效。支持直接填群ID或完整UMO（如 Bot:GroupMessage:12345）。",
+    "default": [],
+    "templates": {
+      "group_template": {
+        "name": "群组配置",
+        "items": {
+          "group_id": {
+            "type": "string",
+            "description": "群ID / UMO",
+            "hint": "群号或完整UMO（如 Bot:GroupMessage:12345），多个用逗号分隔（支持中文逗号）",
+            "default": ""
+          },
+          "reply_probability": {
+            "type": "int",
+            "description": "回复概率(%)",
+            "hint": "留空使用全局回复概率",
+            "default": null,
+            "slider": { "min": 0, "max": 100, "step": 5 }
+          },
+          "active_probability": {
+            "type": "int",
+            "description": "主动概率(%)",
+            "hint": "留空使用全局主动概率",
+            "default": null,
+            "slider": { "min": 0, "max": 100, "step": 5 }
+          }
+        }
+      }
+    }
+  },
   "analyzer_provider_id": {
     "type": "string",
     "description": "分析用 LLM Provider（建议选便宜的模型）",
@@ -22,30 +55,6 @@
     "_special": "select_provider",
     "default": "",
     "hint": "用于生成主动回复内容的LLM（建议用质量高的模型如GPT-5.5）。留空则使用该会话的默认Provider"
-  },
-  "enable_image_caption": {
-    "type": "bool",
-    "description": "启用图片转述（非多模态模型建议开启）",
-    "hint": "若使用的不是多模态模型，开启此项可对群聊消息中的图片使用图片转述模型进行描述转述，供模型阅读。",
-    "default": false
-  },
-  "image_caption_probability": {
-    "type": "int",
-    "description": "图片转述概率（%）",
-    "hint": "仅用于平时即时转述以匹配图片中的关键词。当缓存未命中时，按此概率决定是否调用大模型对新图片进行转述。已缓存的图片会100%直接使用。注意：在Bot准备回复构建上下文时，为了保证回复质量，会对未转述的图片进行100%强制转述。100=每张都转述，0=不转述新图片",
-    "default": 100,
-    "slider": {
-      "min": 0,
-      "max": 100,
-      "step": 5
-    }
-  },
-  "image_caption_provider_id": {
-    "type": "string",
-    "description": "图片转述 LLM Provider",
-    "_special": "select_provider",
-    "default": "",
-    "hint": "用于图片转述的LLM（如多模态模型如GPT-4o/Gemini/Claude等）。留空则使用会话默认或全局图片转述Provider"
   },
   "track_timeout_seconds": {
     "type": "int",
@@ -80,46 +89,25 @@
       "step": 5
     }
   },
+  "enable_llm_tools": {
+    "type": "bool",
+    "description": "回复模式是否启用 LLM 工具/技能",
+    "hint": "开启后回复模式使用 AstrBot 工具循环，LLM 可调用已注册的工具/技能（如搜索、图片生成等）。关闭则仅使用纯文本 LLM 生成，不调用任何工具",
+    "default": true
+  },
+  "analyzer_system_prompt": {
+    "type": "text",
+    "description": "【回复分析】LLM 系统提示词",
+    "hint": "用于判断群友消息是否在回复Bot的LLM提示词。输出应为JSON格式：{\"is_reply_to_bot\": \"yes|no\", \"reason\": \"...\"}",
+    "default": "你是一个群聊对话分析师。请分析以下群聊上下文，判断群友的最新消息是否在和你对话。\n\n判断标准：\n1. 你上一条/上几条消息是你发的，群友紧接着你发言 → 默认是在对话\n2. 消息中提到你的名字或@了你 → 肯定是在对话\n3. 群友在跟别人说话（叫了别人名字、回应非你的消息，或者@了别人、回复了别人）→ 不是在对话\n4. 群友只是发纯语气词/表情且无任何上下文关联 → 不是在对话\n\n注意：如果消息中明确@了其他人，或者回复引用了其他人的消息（而非你），这属于在跟别人说话，判断结果应为不是在对话（\"no\"）。\n\n核心逻辑：你刚说完话就有人接话，正常聊天中就是对方在回应你。但如果对方明确是在和别人互动，则排除。\n宁可误判也不要漏判。\n\n请用以下JSON格式回复（不要包含其他内容）：\n{\n  \"is_reply_to_bot\": \"yes|no\",\n  \"reason\": \"简短的原因说明\"\n}",
+    "editor_mode": true,
+    "editor_language": "markdown"
+  },
   "active_probability": {
     "type": "int",
     "description": "主动模式 - 参与命中概率（%）",
     "hint": "Bot没发言时，随机抽取群消息按此概率分析话题并主动参与。0=关闭主动模式，100=每条消息都可能触发分析",
     "default": 0,
-    "slider": {
-      "min": 0,
-      "max": 100,
-      "step": 5
-    }
-  },
-  "enabled_groups": {
-    "type": "list",
-    "description": "群白名单（支持按群自定义概率）",
-    "hint": "只在这些群中启用。格式：`群ID:【回复概率】:【主动概率】`，可留空某个值，如`群ID::30`表示只设主动概率30%。也支持UMO：`Bot:GroupMessage:群ID`。例：`-100123456:80:30`。留空则所有群生效",
-    "default": []
-  },
-  "enable_keyword_trigger": {
-    "type": "bool",
-    "description": "启用关键词监听模式",
-    "hint": "开启后，当群聊消息中提到设置的兴趣关键词时，将按概率触发回复",
-    "default": false
-  },
-  "enable_keyword_on_image": {
-    "type": "bool",
-    "description": "关键词匹配图片内容",
-    "hint": "开启后，会对图片进行转述，并将转述文本用于匹配关键词。关闭则只对文本消息进行关键词匹配（更省 Token）",
-    "default": false
-  },
-  "keyword_rules": {
-    "type": "list",
-    "description": "兴趣关键词列表",
-    "hint": "格式：`关键词` 或 `关键词:概率`，例如：`苹果`、`香蕉:50`。不设置概率的关键词将使用默认概率。",
-    "default": []
-  },
-  "keyword_default_probability": {
-    "type": "int",
-    "description": "关键词默认触发概率（%）",
-    "hint": "当关键词没有在列表中指定概率时，使用此默认概率",
-    "default": 100,
     "slider": {
       "min": 0,
       "max": 100,
@@ -148,20 +136,6 @@
       "step": 30
     }
   },
-  "enable_llm_tools": {
-    "type": "bool",
-    "description": "回复模式是否启用 LLM 工具/技能",
-    "hint": "开启后回复模式使用 AstrBot 工具循环，LLM 可调用已注册的工具/技能（如搜索、图片生成等）。关闭则仅使用纯文本 LLM 生成，不调用任何工具",
-    "default": true
-  },
-  "analyzer_system_prompt": {
-    "type": "text",
-    "description": "【回复分析】LLM 系统提示词",
-    "hint": "用于判断群友消息是否在回复Bot的LLM提示词。输出应为JSON格式：{\"is_reply_to_bot\": \"yes|no\", \"reason\": \"...\"}",
-    "default": "你是一个群聊对话分析师。请分析以下群聊上下文，判断群友的最新消息是否在和你对话。\n\n判断标准：\n1. 你上一条/上几条消息是你发的，群友紧接着你发言 → 默认是在对话\n2. 消息中提到你的名字或@了你 → 肯定是在对话\n3. 群友在跟别人说话（叫了别人名字、回应非你的消息，或者@了别人、回复了别人）→ 不是在对话\n4. 群友只是发纯语气词/表情且无任何上下文关联 → 不是在对话\n\n注意：如果消息中明确@了其他人，或者回复引用了其他人的消息（而非你），这属于在跟别人说话，判断结果应为不是在对话（\"no\"）。\n\n核心逻辑：你刚说完话就有人接话，正常聊天中就是对方在回应你。但如果对方明确是在和别人互动，则排除。\n宁可误判也不要漏判。\n\n请用以下JSON格式回复（不要包含其他内容）：\n{\n  \"is_reply_to_bot\": \"yes|no\",\n  \"reason\": \"简短的原因说明\"\n}",
-    "editor_mode": true,
-    "editor_language": "markdown"
-  },
   "proactive_analyzer_system_prompt": {
     "type": "text",
     "description": "【主动分析】LLM 系统提示词",
@@ -169,6 +143,174 @@
     "default": "你是一个群聊观察者。请分析以下群聊内容，判断你是否应该参与讨论。\n\n判断标准：\n1. 群消息中提到的话题你是否了解或有见解\n2. 对话是否在邀请更多人参与（提问、征求意见等）\n3. 你是否有想说的内容（吐槽、补充、提问、分享等）\n4. 只要是你有内容想回复，就回复\"yes\"\n5. 只有你完全无话可说时才回复\"no\"\n\n请用以下JSON格式回复（不要包含其他内容）：\n{\n  \"should_join\": \"yes|no\",\n  \"reason\": \"简短的原因说明\"\n}",
     "editor_mode": true,
     "editor_language": "markdown"
+  },
+  "enable_keyword_trigger": {
+    "type": "bool",
+    "description": "启用关键词监听模式",
+    "hint": "开启后，当群聊消息中提到设置的兴趣关键词时，将按概率触发回复",
+    "default": false
+  },
+  "keyword_rules": {
+    "type": "template_list",
+    "description": "兴趣关键词列表",
+    "hint": "当群聊消息中提到这些关键词时触发回复。可为每个关键词设置独立概率。",
+    "default": [],
+    "templates": {
+      "keyword_template": {
+        "name": "关键词规则",
+        "items": {
+          "groups": {
+            "type": "string",
+            "description": "生效群号",
+            "hint": "群号或完整UMO（如 Bot:GroupMessage:12345），多个用逗号分隔（支持中文逗号），留空则所有群生效",
+            "default": ""
+          },
+          "keywords": {
+            "type": "string",
+            "description": "关键词",
+            "hint": "多个关键词用逗号分隔（支持中文逗号），如 原神,星铁",
+            "default": ""
+          },
+          "probability": {
+            "type": "int",
+            "description": "触发概率(%)",
+            "hint": "留空使用下方默认概率",
+            "default": null,
+            "slider": { "min": 0, "max": 100, "step": 5 }
+          }
+        }
+      }
+    }
+  },
+  "keyword_default_probability": {
+    "type": "int",
+    "description": "关键词默认触发概率（%）",
+    "hint": "当关键词没有在列表中指定概率时，使用此默认概率",
+    "default": 100,
+    "slider": {
+      "min": 0,
+      "max": 100,
+      "step": 5
+    }
+  },
+  "enable_keyword_on_image": {
+    "type": "bool",
+    "description": "关键词匹配图片内容",
+    "hint": "开启后，会对图片进行转述，并将转述文本用于匹配关键词。关闭则只对文本消息进行关键词匹配（更省 Token）",
+    "default": false
+  },
+  "enable_image_caption": {
+    "type": "bool",
+    "description": "启用图片转述（非多模态模型建议开启）",
+    "hint": "若使用的不是多模态模型，开启此项可对群聊消息中的图片使用图片转述模型进行描述转述，供模型阅读。",
+    "default": false
+  },
+  "image_caption_probability": {
+    "type": "int",
+    "description": "图片转述概率（%）",
+    "hint": "仅用于平时即时转述以匹配图片中的关键词。当缓存未命中时，按此概率决定是否调用大模型对新图片进行转述。已缓存的图片会100%直接使用。注意：在Bot准备回复构建上下文时，为了保证回复质量，会对未转述的图片进行100%强制转述。100=每张都转述，0=不转述新图片",
+    "default": 100,
+    "slider": {
+      "min": 0,
+      "max": 100,
+      "step": 5
+    }
+  },
+  "image_caption_provider_id": {
+    "type": "string",
+    "description": "图片转述 LLM Provider",
+    "_special": "select_provider",
+    "default": "",
+    "hint": "用于图片转述的LLM（如多模态模型如GPT-4o/Gemini/Claude等）。留空则使用会话默认或全局图片转述Provider"
+  },
+  "batch_analysis_enabled": {
+    "type": "bool",
+    "description": "启用延迟批次分析（让 Bot 等待群聊停顿后再批量分析）",
+    "hint": "开启后，Bot 不会在每条消息后立即分析，而是等群聊短暂停顿后将一批消息打包分析。模拟真人聊天中'等对方说完再回应'的行为。适用于回复模式、主动模式和关键词模式。",
+    "default": true
+  },
+  "silence_multiplier": {
+    "type": "float",
+    "description": "批次分析 - 静默判定倍数",
+    "hint": "动态停顿阈值的计算倍数。实际停顿 = clamp(消息平均间隔 × 此倍数, 最小秒数, 最大秒数)。值越大等得越久。",
+    "default": 2.5,
+    "slider": {
+      "min": 1.5,
+      "max": 5.0,
+      "step": 0.5
+    }
+  },
+  "min_silence_seconds": {
+    "type": "int",
+    "description": "批次分析 - 最小静默秒数",
+    "hint": "无论群聊节奏多快，至少要静默这么久才认为对方说完。防止 Bot 抢话。",
+    "default": 3,
+    "slider": {
+      "min": 2,
+      "max": 10,
+      "step": 1
+    }
+  },
+  "max_silence_seconds": {
+    "type": "int",
+    "description": "批次分析 - 最大静默秒数",
+    "hint": "无论群聊节奏多慢，最多等这么久就触发分析。防止 Bot 傻等。",
+    "default": 12,
+    "slider": {
+      "min": 5,
+      "max": 30,
+      "step": 1
+    }
+  },
+  "max_batch_wait_seconds": {
+    "type": "int",
+    "description": "批次分析 - 绝对超时秒数",
+    "hint": "从批次第一条消息开始，绝对不等的秒数上限。即使群聊一直热闹不停顿，到期也会触发分析。",
+    "default": 15,
+    "slider": {
+      "min": 5,
+      "max": 60,
+      "step": 5
+    }
+  },
+  "max_batch_messages": {
+    "type": "int",
+    "description": "批次分析 - 最大消息数",
+    "hint": "批次中消息积攒到此数量时，无论节奏如何都触发分析。防止一次攒太多消息影响判断质量。",
+    "default": 6,
+    "slider": {
+      "min": 2,
+      "max": 20,
+      "step": 1
+    }
+  },
+  "instant_at_bot": {
+    "type": "bool",
+    "description": "批次分析 - @Bot 时立即触发",
+    "hint": "开启后，在批次等待期间有人 @ 了 Bot，会立即触发分析而非继续等待。关闭则 @ 也加入批次等待。",
+    "default": true
+  },
+  "caption_timeout_seconds": {
+    "type": "int",
+    "description": "批次分析 - 图片转述等待超时（秒）",
+    "hint": "批次触发后，等待图片转述完成的最长时间。超时后根据「超时策略」处理。",
+    "default": 10,
+    "slider": {
+      "min": 5,
+      "max": 30,
+      "step": 5
+    }
+  },
+  "caption_timeout_behavior": {
+    "type": "string",
+    "description": "批次分析 - 图片转述超时处理策略",
+    "hint": "wait_then_fallback: 等待转述完成，超时用占位符 | skip_use_url: 不等待，直接传图片URL给analyzer（非多模态模型自动降级为占位符）| skip_use_placeholder: 不等待，直接用占位符",
+    "default": "wait_then_fallback",
+    "options": [
+      "wait_then_fallback",
+      "skip_use_url",
+      "skip_use_placeholder"
+    ]
   },
   "human_like_mode": {
     "type": "bool",

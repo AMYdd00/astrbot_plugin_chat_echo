@@ -38,6 +38,13 @@ CONFIG_VERSION = 5
 CONFIG_VERSION_FILE = "_config_version.txt"
 
 
+def _is_valid_entry(entry) -> bool:
+    """Check if a config list entry is valid (non-empty dict or non-empty string)."""
+    if isinstance(entry, dict):
+        return True
+    return bool(str(entry).strip())
+
+
 def upgrade_config(config, data_dir: Path, logger) -> None:
     """Upgrade configuration prompts if they are outdated."""
     try:
@@ -67,69 +74,94 @@ def upgrade_config(config, data_dir: Path, logger) -> None:
         logger.exception(f"Failed to upgrade config: {e}")
 
 
-def parse_group_entry(entry: str) -> tuple[str, int | None, int | None]:
-    """Parse a group whitelist entry."""
-    entry = entry.strip()
-    if not entry:
-        return "", None, None
-    parts = entry.split(":")
+def parse_group_entry(entry) -> list[tuple[str, int | None, int | None]]:
+    """Parse a group whitelist entry. Supports both old string format and new dict format.
+    Returns a list of (group_id, reply_prob, active_prob) tuples (supports comma-separated multi-group).
+    """
+    rp: int | None = None
+    ap: int | None = None
+    gid_str = ""
 
-    platforms = {
-        "aiocqhttp",
-        "telegram",
-        "discord",
-        "lark",
-        "qq_official",
-        "dingtalk",
-        "kook",
-        "slack",
-        "mattermost",
-        "satori",
-    }
-
-    is_umo = False
-    if len(parts) >= 3:
-        if parts[0] in platforms or parts[1] in {
-            "GroupMessage",
-            "PrivateMessage",
-            "GuildMessage",
-        }:
-            is_umo = True
-
-    if is_umo:
-        umo_id = ":".join(parts[:3])
-        reply_p = None
-        active_p = None
-        if len(parts) >= 4:
-            reply_p = int(parts[3]) if parts[3].strip().isdigit() else None
-        if len(parts) >= 5:
-            active_p = int(parts[4]) if parts[4].strip().isdigit() else None
-        return umo_id, reply_p, active_p
+    # New template_list dict format
+    if isinstance(entry, dict):
+        gid_str = entry.get("group_id", "").strip()
+        rp = entry.get("reply_probability")
+        ap = entry.get("active_probability")
+        if not (isinstance(rp, int) and rp >= 0):
+            rp = None
+        if not (isinstance(ap, int) and ap >= 0):
+            ap = None
     else:
-        group_id = parts[0]
-        reply_p = None
-        active_p = None
-        if len(parts) >= 2:
-            reply_p = int(parts[1]) if parts[1].strip().isdigit() else None
+        # Old string format: "group_id:reply_prob:active_prob"
+        entry = str(entry).strip()
+        if not entry:
+            return []
+        parts = entry.split(":")
+
+        platforms = {
+            "aiocqhttp", "telegram", "discord", "lark", "qq_official",
+            "dingtalk", "kook", "slack", "mattermost", "satori",
+        }
+        is_umo = False
         if len(parts) >= 3:
-            active_p = int(parts[2]) if parts[2].strip().isdigit() else None
-        return group_id, reply_p, active_p
+            if parts[0] in platforms or parts[1] in {
+                "GroupMessage", "PrivateMessage", "GuildMessage",
+            }:
+                is_umo = True
+
+        if is_umo:
+            gid_str = ":".join(parts[:3])
+            if len(parts) >= 4:
+                rp = int(parts[3]) if parts[3].strip().isdigit() else None
+            if len(parts) >= 5:
+                ap = int(parts[4]) if parts[4].strip().isdigit() else None
+        else:
+            gid_str = parts[0]
+            if len(parts) >= 2:
+                rp = int(parts[1]) if parts[1].strip().isdigit() else None
+            if len(parts) >= 3:
+                ap = int(parts[2]) if parts[2].strip().isdigit() else None
+
+    # Split comma-separated group IDs
+    if not gid_str:
+        return []
+    return [(g.strip(), rp, ap) for g in _split_list(gid_str)]
 
 
-def parse_keyword_rule(entry: str) -> tuple[str, int | None]:
-    """Parse a keyword rule entry."""
-    entry = entry.strip()
+def _split_list(value: str | None) -> list[str]:
+    """Split comma-separated string (supports both Chinese and English commas)."""
+    if not value:
+        return []
+    normalized = str(value).replace("，", ",")
+    return [s.strip() for s in normalized.split(",") if s.strip()]
+
+
+def parse_keyword_rule(entry) -> tuple[list[str], set[str], int | None]:
+    """Parse a keyword rule entry. Returns (keywords, groups_set, probability).
+    Supports both old string format and new dict format.
+    """
+    # New template_list dict format (v1.1.3+)
+    if isinstance(entry, dict):
+        kw_str = entry.get("keywords", entry.get("keyword", ""))
+        groups_str = entry.get("groups", "")
+        keywords = _split_list(kw_str)
+        groups = set(_split_list(groups_str))
+        prob = entry.get("probability")
+        if isinstance(prob, int) and prob >= 0:
+            return keywords, groups, prob
+        return keywords, groups, None
+
+    # Old string format: "keyword" or "keyword:probability"
+    entry = str(entry).strip()
     if not entry:
-        return "", None
+        return [], set(), None
     if ":" in entry:
         parts = entry.rsplit(":", 1)
         keyword = parts[0].strip()
         prob_str = parts[1].strip()
-        if prob_str.isdigit():
-            return keyword, int(prob_str)
-        else:
-            return entry, None
-    return entry, None
+        prob = int(prob_str) if prob_str.isdigit() else None
+        return [keyword] if keyword else [], set(), prob
+    return [entry], set(), None
 
 
 class ConfigHelper:
@@ -138,19 +170,20 @@ class ConfigHelper:
     def __init__(self, config):
         self.config = config
         self.parsed_groups: list[tuple[str, int | None, int | None]] = []
-        self.parsed_keywords: list[tuple[str, int | None]] = []
+        self.parsed_keywords: list[tuple[list[str], set[str], int | None]] = []
         self.refresh()
 
     def refresh(self):
         """Re-parse the enabled groups from configuration."""
         enabled = self.enabled_groups()
-        self.parsed_groups = [
-            parse_group_entry(entry) for entry in enabled if entry.strip()
-        ]
+        self.parsed_groups = []
+        for entry in enabled:
+            if _is_valid_entry(entry):
+                self.parsed_groups.extend(parse_group_entry(entry))
 
         keywords = self.keyword_rules()
         self.parsed_keywords = [
-            parse_keyword_rule(entry) for entry in keywords if entry.strip()
+            parse_keyword_rule(entry) for entry in keywords if _is_valid_entry(entry)
         ]
 
     def cfg(self, key: str, default=None):
@@ -174,6 +207,35 @@ class ConfigHelper:
 
     def keyword_default_probability(self) -> int:
         return int(self.cfg("keyword_default_probability", 100))
+
+    def get_matched_keyword(self, group_id: str, content: str) -> tuple[str | None, int | None]:
+        """Check if content matches any keyword rule applicable to this group.
+        Returns (matched_keyword, probability) or (None, None).
+        """
+        content_lower = content.lower()
+        for keywords, groups, prob in self.parsed_keywords:
+            # Check group filter: support group_id, UMO, and UMO suffix matching
+            if groups and not self._match_group_set(groups, group_id):
+                continue
+            for kw in keywords:
+                if kw.lower() in content_lower:
+                    return kw, prob
+        return None, None
+
+    def _match_group_set(self, groups: set[str], group_id: str) -> bool:
+        """Check if group_id matches any entry in the groups set.
+        Supports direct group_id match and UMO suffix match (e.g., Bot:GroupMessage:123).
+        """
+        for g in groups:
+            if g == group_id:
+                return True
+            # UMO suffix match: the last segment after the last ':' equals group_id
+            try:
+                if ":" in g and g.rsplit(":", 1)[-1] == group_id:
+                    return True
+            except (AttributeError, IndexError, ValueError):
+                pass
+        return False
 
     def track_timeout(self) -> int:
         return int(self.cfg("track_timeout_seconds", 120))
@@ -277,5 +339,31 @@ class ConfigHelper:
     def typing_delay_max(self) -> float:
         return float(self.cfg("typing_delay_max", 4.0))
 
-    def filter_prefixes(self) -> list:
-        return self.cfg("filter_prefixes", ["/", "$", "!", "#"])
+    # ======== Batch analysis config ========
+
+    def batch_analysis_enabled(self) -> bool:
+        return bool(self.cfg("batch_analysis_enabled", True))
+
+    def silence_multiplier(self) -> float:
+        return float(self.cfg("silence_multiplier", 2.5))
+
+    def min_silence_seconds(self) -> int:
+        return int(self.cfg("min_silence_seconds", 3))
+
+    def max_silence_seconds(self) -> int:
+        return int(self.cfg("max_silence_seconds", 12))
+
+    def max_batch_wait_seconds(self) -> int:
+        return int(self.cfg("max_batch_wait_seconds", 15))
+
+    def max_batch_messages(self) -> int:
+        return int(self.cfg("max_batch_messages", 6))
+
+    def instant_at_bot(self) -> bool:
+        return bool(self.cfg("instant_at_bot", True))
+
+    def caption_timeout_seconds(self) -> int:
+        return int(self.cfg("caption_timeout_seconds", 10))
+
+    def caption_timeout_behavior(self) -> str:
+        return str(self.cfg("caption_timeout_behavior", "wait_then_fallback"))
