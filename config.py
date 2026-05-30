@@ -276,3 +276,32 @@ class ConfigHelper:
 
     def typing_delay_max(self) -> float:
         return float(self.cfg("typing_delay_max", 4.0))
+
+    # ======== Batch analysis config ========
+
+    def batch_analysis_enabled(self) -> bool:
+        return bool(self.cfg("batch_analysis_enabled", True))
+
+    def silence_multiplier(self) -> float:
+        return float(self.cfg("silence_multiplier", 2.5))
+
+    def min_silence_seconds(self) -> int:
+        return int(self.cfg("min_silence_seconds", 3))
+
+    def max_silence_seconds(self) -> int:
+        return int(self.cfg("max_silence_seconds", 12))
+
+    def max_batch_wait_seconds(self) -> int:
+        return int(self.cfg("max_batch_wait_seconds", 15))
+
+    def max_batch_messages(self) -> int:
+        return int(self.cfg("max_batch_messages", 6))
+
+    def instant_at_bot(self) -> bool:
+        return bool(self.cfg("instant_at_bot", True))
+
+    def caption_timeout_seconds(self) -> int:
+        return int(self.cfg("caption_timeout_seconds", 10))
+
+    def caption_timeout_behavior(self) -> str:
+        return str(self.cfg("caption_timeout_behavior", "wait_then_fallback"))

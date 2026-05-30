@@ -219,5 +219,94 @@
       "max": 10,
       "step": 0.5
     }
+  },
+  "batch_analysis_enabled": {
+    "type": "bool",
+    "description": "启用延迟批次分析（让 Bot 等待群聊停顿后再批量分析）",
+    "hint": "开启后，Bot 不会在每条消息后立即分析，而是等群聊短暂停顿后将一批消息打包分析。模拟真人聊天中'等对方说完再回应'的行为。适用于回复模式、主动模式和关键词模式。",
+    "default": true
+  },
+  "silence_multiplier": {
+    "type": "float",
+    "description": "批次分析 - 静默判定倍数",
+    "hint": "动态停顿阈值的计算倍数。实际停顿 = clamp(消息平均间隔 × 此倍数, 最小秒数, 最大秒数)。值越大等得越久。",
+    "default": 2.5,
+    "slider": {
+      "min": 1.5,
+      "max": 5.0,
+      "step": 0.5
+    }
+  },
+  "min_silence_seconds": {
+    "type": "int",
+    "description": "批次分析 - 最小静默秒数",
+    "hint": "无论群聊节奏多快，至少要静默这么久才认为对方说完。防止 Bot 抢话。",
+    "default": 3,
+    "slider": {
+      "min": 2,
+      "max": 10,
+      "step": 1
+    }
+  },
+  "max_silence_seconds": {
+    "type": "int",
+    "description": "批次分析 - 最大静默秒数",
+    "hint": "无论群聊节奏多慢，最多等这么久就触发分析。防止 Bot 傻等。",
+    "default": 12,
+    "slider": {
+      "min": 5,
+      "max": 30,
+      "step": 1
+    }
+  },
+  "max_batch_wait_seconds": {
+    "type": "int",
+    "description": "批次分析 - 绝对超时秒数",
+    "hint": "从批次第一条消息开始，绝对不等的秒数上限。即使群聊一直热闹不停顿，到期也会触发分析。",
+    "default": 15,
+    "slider": {
+      "min": 5,
+      "max": 60,
+      "step": 5
+    }
+  },
+  "max_batch_messages": {
+    "type": "int",
+    "description": "批次分析 - 最大消息数",
+    "hint": "批次中消息积攒到此数量时，无论节奏如何都触发分析。防止一次攒太多消息影响判断质量。",
+    "default": 6,
+    "slider": {
+      "min": 2,
+      "max": 20,
+      "step": 1
+    }
+  },
+  "instant_at_bot": {
+    "type": "bool",
+    "description": "批次分析 - @Bot 时立即触发",
+    "hint": "开启后，在批次等待期间有人 @ 了 Bot，会立即触发分析而非继续等待。关闭则 @ 也加入批次等待。",
+    "default": true
+  },
+  "caption_timeout_seconds": {
+    "type": "int",
+    "description": "批次分析 - 图片转述等待超时（秒）",
+    "hint": "批次触发后，等待图片转述完成的最长时间。超时后根据「超时策略」处理。",
+    "default": 10,
+    "slider": {
+      "min": 5,
+      "max": 30,
+      "step": 5
+    }
+  },
+  "caption_timeout_behavior": {
+    "type": "string",
+    "description": "批次分析 - 图片转述超时处理策略",
+    "hint": "wait_then_fallback: 等待转述完成，超时用占位符 | skip_use_url: 不等待，直接传图片URL给analyzer（非多模态模型自动降级为占位符）| skip_use_placeholder: 不等待，直接用占位符",
+    "default": "wait_then_fallback",
+    "options": [
+      "wait_then_fallback",
+      "skip_use_url",
+      "skip_use_placeholder"
+    ]
   }
 }

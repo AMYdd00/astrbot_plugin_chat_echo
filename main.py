@@ -19,7 +19,16 @@ from astrbot.api.star import Context, Star, StarTools, register
 from astrbot.core.provider.entities import ProviderRequest
 
 from .config import ConfigHelper, upgrade_config
-from .handlers import handle_keyword, handle_proactive, handle_reply, start_tracking
+from .handlers import (
+    handle_keyword,
+    handle_proactive,
+    handle_reply,
+    handle_reply_batch,
+    handle_proactive_batch,
+    prewarm_captions,
+    start_tracking,
+    ensure_context_captions,
+)
 from .helpers import (
     extract_bot_text,
     extract_image_urls,
@@ -36,7 +45,7 @@ PLUGIN_NAME = "astrbot_plugin_chat_echo"
 PROACTIVE_WINDOW_SIZE = 10
 
 
-@register("astrbot_plugin_chat_echo", "AMYdd00, Yao-lin101", "主动接话插件", "1.1.2")
+@register("astrbot_plugin_chat_echo", "AMYdd00, Yao-lin101", "主动接话插件", "1.1.3")
 class EchoPlugin(Star):
     def __init__(self, context: Context, config=None):
         super().__init__(context)
@@ -108,7 +117,8 @@ class EchoPlugin(Star):
     async def initialize(self):
         self.logger.info(
             f"主动接话插件初始化完成 | 触发模式: {self.config_helper.trigger_mode()} | "
-            f"关键词监听: {self.config_helper.enable_keyword_trigger()} (规则数: {len(self.config_helper.parsed_keywords)})"
+            f"关键词监听: {self.config_helper.enable_keyword_trigger()} (规则数: {len(self.config_helper.parsed_keywords)}) | "
+            f"批次分析: {self.config_helper.batch_analysis_enabled()}"
         )
         self.token_counter.start()
 
@@ -442,36 +452,76 @@ class EchoPlugin(Star):
                         f"[Keyword] Keyword '{matched_keyword}' matched but probability roll missed."
                     )
 
-        # ====== Reply Mode (Route 1) ======
+        # ====== Reply Mode (Route 1) - Batch or Instant ======
         tracker = self.tracker_manager.get_tracker(group_id)
         if tracker and tracker.alive:
             if now > tracker.expire_at:
                 self.tracker_manager.cleanup_tracker(group_id)
+                # Clear any pending proactive buffer after tracker cleanup
+                self.tracker_manager.clear_proactive_buffer(group_id)
             else:
                 tracker.expire_at = now + self.config_helper.track_timeout()
+
+                # Also collect in legacy list (for compatibility with existing handlers)
                 tracker.collected.append(msg)
-                if tracker.analyzing or self.tracker_manager.is_active_thinking(
-                    group_id
-                ):
+
+                if tracker.analyzing or self.tracker_manager.is_active_thinking(group_id):
                     return
-                if is_probability_hit(
-                    self.config_helper.get_effective_reply_prob(group_id, umo)
-                ):
-                    tracker.analyzing = True
-                    res = await handle_reply(self, tracker, event)
-                    if res:
-                        event.is_at_or_wake_command = True
-                        event.set_extra("chat_echo_triggered", True)
-                        event.set_extra("chat_echo_mode", "reply")
-                        event.set_extra(
-                            "selected_provider", self.config_helper.generator_provider()
-                        )
-                        self.tracker_manager.set_active_thinking(group_id, True)
-                        return None
+
+                # Start background caption for message images (fire-and-forget)
+                if self.config_helper.enable_image_caption() and image_urls:
+                    await prewarm_captions(self, msg, umo)
+
+                if not self.config_helper.batch_analysis_enabled():
+                    # ---- Legacy instant analysis ----
+                    if is_probability_hit(
+                        self.config_helper.get_effective_reply_prob(group_id, umo)
+                    ):
+                        tracker.analyzing = True
+                        res = await handle_reply(self, tracker, event)
+                        if res:
+                            event.is_at_or_wake_command = True
+                            event.set_extra("chat_echo_triggered", True)
+                            event.set_extra("chat_echo_mode", "reply")
+                            event.set_extra(
+                                "selected_provider", self.config_helper.generator_provider()
+                            )
+                            self.tracker_manager.set_active_thinking(group_id, True)
+                            return None
+                        return
                     return
+
+                # ---- Batch analysis mode ----
+                tracker.batch_mode = "reply"
+                trigger_now = self.tracker_manager.add_to_batch(tracker, msg, self)
+
+                if trigger_now:
+                    # Immediate flush: @bot or batch full
+                    self.logger.info(
+                        f"[Batch] Immediate flush triggered by {trigger_now['reason']} in group {group_id}"
+                    )
+                    await self._flush_batch_reply(tracker, event, group_id, umo)
+                    return
+
+                # Schedule or check dynamic silence
+                if tracker.batch_timer and not tracker.batch_timer.done():
+                    tracker.batch_timer.cancel()
+                    tracker.batch_timer = None
+
+                silence_delay = self.tracker_manager.compute_silence_delay(tracker, self)
+                # Also respect absolute timeout
+                max_wait = self.config_helper.max_batch_wait_seconds()
+                elapsed = now - tracker.batch_first_msg_time
+                remaining = max(0.5, min(silence_delay, max_wait - elapsed))
+                self.logger.debug(
+                    f"[Batch] Scheduling flush in {remaining:.1f}s for group {group_id} (silence={silence_delay:.1f}s, max_wait={max_wait}s)"
+                )
+                tracker.batch_timer = asyncio.create_task(
+                    self._schedule_batch_flush_reply(tracker, event, group_id, umo, remaining)
+                )
                 return
 
-        # ====== Proactive Mode (Route 2) ======
+        # ====== Proactive Mode (Route 2) - Batch or Instant ======
         if self.tracker_manager.is_active_thinking(
             group_id
         ) or self.tracker_manager.is_proactive_flagged(group_id):
@@ -487,7 +537,12 @@ class EchoPlugin(Star):
             return
         if self.tracker_manager.has_active_tracker(group_id):
             return
-        if is_probability_hit(active_prob):
+
+        if not is_probability_hit(active_prob):
+            return
+
+        if not self.config_helper.batch_analysis_enabled():
+            # ---- Legacy instant proactive ----
             self.tracker_manager.set_active_thinking(group_id, True)
             res = await handle_proactive(self, event, msg, window)
             if res:
@@ -500,6 +555,146 @@ class EchoPlugin(Star):
                 return None
             else:
                 self.tracker_manager.set_active_thinking(group_id, False)
+            return
+
+        # ---- Batch proactive mode ----
+        # Start background caption for message images
+        if self.config_helper.enable_image_caption() and image_urls:
+            await prewarm_captions(self, msg, umo)
+
+        trigger_now = self.tracker_manager.add_to_proactive_batch(
+            group_id, msg, self
+        )
+        if trigger_now:
+            self.logger.info(
+                f"[ProactiveBatch] Immediate flush triggered by {trigger_now['reason']} in group {group_id}"
+            )
+            await self._flush_batch_proactive(event, group_id, umo)
+            return
+
+        # Schedule proactive batch flush
+        buf = self.tracker_manager.get_proactive_buffer(group_id)
+        if buf and buf.get("timer") and not buf["timer"].done():
+            buf["timer"].cancel()
+            buf["timer"] = None
+
+        buf = self.tracker_manager.ensure_proactive_buffer(group_id, umo)
+        buf["event"] = event
+        msg_count = len(buf["buffer"])
+        if msg_count <= 1:
+            silence_delay = float(self.config_helper.min_silence_seconds())
+        else:
+            total_span = now - buf["first_msg_time"]
+            avg_interval = total_span / (msg_count - 1)
+            threshold = avg_interval * self.config_helper.silence_multiplier()
+            silence_delay = max(
+                float(self.config_helper.min_silence_seconds()),
+                min(threshold, float(self.config_helper.max_silence_seconds())),
+            )
+
+        max_wait = self.config_helper.max_batch_wait_seconds()
+        elapsed = now - buf["first_msg_time"]
+        remaining = max(0.5, min(silence_delay, max_wait - elapsed))
+        self.logger.debug(
+            f"[ProactiveBatch] Scheduling flush in {remaining:.1f}s for group {group_id}"
+        )
+        buf["timer"] = asyncio.create_task(
+            self._schedule_batch_flush_proactive(group_id, remaining)
+        )
+
+    # ======== Batch flush methods ========
+
+    async def _schedule_batch_flush_reply(
+        self, tracker, event, group_id, umo, delay
+    ):
+        """Wait for dynamic silence period, then flush reply batch."""
+        try:
+            await asyncio.sleep(delay)
+            if not tracker.alive:
+                return
+            if tracker.analyzing or self.tracker_manager.is_active_thinking(group_id):
+                return
+            if not tracker.batch_buffer:
+                return
+
+            self.logger.info(
+                f"[Batch] Flushing reply batch ({len(tracker.batch_buffer)} msgs) in group {group_id}"
+            )
+            await self._flush_batch_reply(tracker, event, group_id, umo)
+        except asyncio.CancelledError:
+            pass
+        except Exception:
+            self.logger.exception(f"[Batch] Error in scheduled reply flush: {e}")
+
+    async def _flush_batch_reply(self, tracker, event, group_id, umo):
+        """Flush accumulated batch messages for reply analysis and trigger if appropriate."""
+        if tracker.analyzing or self.tracker_manager.is_active_thinking(group_id):
+            return
+
+        batch = self.tracker_manager.clear_batch_state(tracker)
+        if not batch:
+            return
+
+        tracker.analyzing = True
+        try:
+            res = await handle_reply_batch(self, tracker, event, batch)
+            if res:
+                event.is_at_or_wake_command = True
+                event.set_extra("chat_echo_triggered", True)
+                event.set_extra("chat_echo_mode", "reply")
+                event.set_extra(
+                    "selected_provider", self.config_helper.generator_provider()
+                )
+                self.tracker_manager.set_active_thinking(group_id, True)
+        finally:
+            tracker.analyzing = False
+
+    async def _schedule_batch_flush_proactive(self, group_id, delay):
+        """Wait for dynamic silence period, then flush proactive batch."""
+        try:
+            await asyncio.sleep(delay)
+            buf = self.tracker_manager.get_proactive_buffer(group_id)
+            if not buf or not buf["buffer"]:
+                return
+            if self.tracker_manager.is_active_thinking(group_id):
+                return
+
+            event = buf.get("event")
+            umo = buf.get("umo", "")
+            self.logger.info(
+                f"[ProactiveBatch] Flushing proactive batch ({len(buf['buffer'])} msgs) in group {group_id}"
+            )
+            if event:
+                await self._flush_batch_proactive(event, group_id, umo)
+        except asyncio.CancelledError:
+            return
+        except Exception:
+            self.logger.exception(f"[ProactiveBatch] Error in scheduled proactive flush: {e}")
+            return
+
+    async def _flush_batch_proactive(self, event, group_id, umo):
+        """Flush accumulated proactive batch for participation analysis."""
+        if self.tracker_manager.is_active_thinking(group_id):
+            return
+
+        batch = self.tracker_manager.clear_proactive_buffer(group_id)
+        if not batch:
+            return
+
+        self.tracker_manager.set_active_thinking(group_id, True)
+        try:
+            res = await handle_proactive_batch(self, event, batch)
+            if res:
+                event.is_at_or_wake_command = True
+                event.set_extra("chat_echo_triggered", True)
+                event.set_extra("chat_echo_mode", "proactive")
+                event.set_extra(
+                    "selected_provider", self.config_helper.generator_provider()
+                )
+        finally:
+            self.tracker_manager.set_active_thinking(group_id, False)
+
+    # ======== Web API handlers ========
 
     async def page_token_stats(self):
         try:
@@ -771,7 +966,7 @@ class EchoPlugin(Star):
                 "每个时段定义：状态名、活跃度(0.0-1.0)、结束时间、简短理由。\n"
                 "活跃度含义：1.0=完全在线积极参与、0.5=偶尔看看、0.0=不可用(如睡觉)\n\n"
                 '输出JSON数组：[{"state": "状态名", "activity": 0.0-1.0, "until": "HH:MM", "reason": "简短理由"}]\n'
-                "只输出JSON，不要其他内容。"
+                "只输出JSON，不要其他内容。直接输出，不要思考过程。只需要规划接下来12小时即可。"
             )
             provider_id = self.config_helper.analyzer_provider()
             if not provider_id and umo:
