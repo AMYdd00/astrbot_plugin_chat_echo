@@ -74,69 +74,58 @@ def upgrade_config(config, data_dir: Path, logger) -> None:
         logger.exception(f"Failed to upgrade config: {e}")
 
 
-def parse_group_entry(entry) -> tuple[str, int | None, int | None]:
-    """Parse a group whitelist entry. Supports both old string format and new dict format."""
+def parse_group_entry(entry) -> list[tuple[str, int | None, int | None]]:
+    """Parse a group whitelist entry. Supports both old string format and new dict format.
+    Returns a list of (group_id, reply_prob, active_prob) tuples (supports comma-separated multi-group).
+    """
+    rp: int | None = None
+    ap: int | None = None
+    gid_str = ""
+
     # New template_list dict format
     if isinstance(entry, dict):
-        gid = entry.get("group_id", "").strip()
+        gid_str = entry.get("group_id", "").strip()
         rp = entry.get("reply_probability")
         ap = entry.get("active_probability")
-        if isinstance(rp, int) and rp >= 0:
-            pass
-        else:
+        if not (isinstance(rp, int) and rp >= 0):
             rp = None
-        if isinstance(ap, int) and ap >= 0:
-            pass
-        else:
+        if not (isinstance(ap, int) and ap >= 0):
             ap = None
-        return gid, rp, ap
-
-    # Old string format: "group_id:reply_prob:active_prob" or "Bot:GroupMessage:group_id:reply:active"
-    entry = str(entry).strip()
-    if not entry:
-        return "", None, None
-    parts = entry.split(":")
-
-    platforms = {
-        "aiocqhttp",
-        "telegram",
-        "discord",
-        "lark",
-        "qq_official",
-        "dingtalk",
-        "kook",
-        "slack",
-        "mattermost",
-        "satori",
-    }
-
-    is_umo = False
-    if len(parts) >= 3:
-        if parts[0] in platforms or parts[1] in {
-            "GroupMessage",
-            "PrivateMessage",
-            "GuildMessage",
-        }:
-            is_umo = True
-
-    if is_umo:
-        umo_id = ":".join(parts[:3])
-        reply_p = None
-        active_p = None
-        if len(parts) >= 4:
-            reply_p = int(parts[3]) if parts[3].strip().isdigit() else None
-        if len(parts) >= 5:
-            active_p = int(parts[4]) if parts[4].strip().isdigit() else None
-        return umo_id, reply_p, active_p
     else:
-        group_id = parts[0]
-        reply_p = None
-        active_p = None
-        if len(parts) >= 2:
-            reply_p = int(parts[1]) if parts[1].strip().isdigit() else None
+        # Old string format: "group_id:reply_prob:active_prob"
+        entry = str(entry).strip()
+        if not entry:
+            return []
+        parts = entry.split(":")
+
+        platforms = {
+            "aiocqhttp", "telegram", "discord", "lark", "qq_official",
+            "dingtalk", "kook", "slack", "mattermost", "satori",
+        }
+        is_umo = False
         if len(parts) >= 3:
-            active_p = int(parts[2]) if parts[2].strip().isdigit() else None
-        return group_id, reply_p, active_p
+            if parts[0] in platforms or parts[1] in {
+                "GroupMessage", "PrivateMessage", "GuildMessage",
+            }:
+                is_umo = True
+
+        if is_umo:
+            gid_str = ":".join(parts[:3])
+            if len(parts) >= 4:
+                rp = int(parts[3]) if parts[3].strip().isdigit() else None
+            if len(parts) >= 5:
+                ap = int(parts[4]) if parts[4].strip().isdigit() else None
+        else:
+            gid_str = parts[0]
+            if len(parts) >= 2:
+                rp = int(parts[1]) if parts[1].strip().isdigit() else None
+            if len(parts) >= 3:
+                ap = int(parts[2]) if parts[2].strip().isdigit() else None
+
+    # Split comma-separated group IDs
+    if not gid_str:
+        return []
+    return [(g.strip(), rp, ap) for g in _split_list(gid_str)]
 
 
 def _split_list(value: str | None) -> list[str]:
@@ -187,9 +176,10 @@ class ConfigHelper:
     def refresh(self):
         """Re-parse the enabled groups from configuration."""
         enabled = self.enabled_groups()
-        self.parsed_groups = [
-            parse_group_entry(entry) for entry in enabled if _is_valid_entry(entry)
-        ]
+        self.parsed_groups = []
+        for entry in enabled:
+            if _is_valid_entry(entry):
+                self.parsed_groups.extend(parse_group_entry(entry))
 
         keywords = self.keyword_rules()
         self.parsed_keywords = [
