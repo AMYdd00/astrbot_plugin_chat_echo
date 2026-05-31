@@ -262,6 +262,7 @@ class EchoPlugin(Star):
     @filter.command("bot在干嘛")
     async def cmd_bot_status(self, event: AstrMessageEvent):
         """查询 Bot 当前状态"""
+        event.is_at_or_wake_command = True
         if not is_group_event(event):
             yield event.plain_result("此命令仅支持群聊环境")
             return
@@ -281,6 +282,7 @@ class EchoPlugin(Star):
     @filter.command("bot计划表")
     async def cmd_bot_schedule(self, event: AstrMessageEvent):
         """查询 Bot 计划表"""
+        event.is_at_or_wake_command = True
         if not is_group_event(event):
             yield event.plain_result("此命令仅支持群聊环境")
             return
@@ -313,6 +315,9 @@ class EchoPlugin(Star):
         umo = event.unified_msg_origin
         if not self.config_helper.is_group_allowed(group_id, umo):
             return
+
+        if event.is_at_or_wake_command:
+            return  # 已被命令处理器处理，跳过
 
         now = time.time()
 
