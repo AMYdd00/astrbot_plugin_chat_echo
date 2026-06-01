@@ -336,12 +336,12 @@ class EchoPlugin(Star):
         if has_other_handlers:
             return
 
+        now = time.time()
+
         # Intercept the native wake/at-bot LLM trigger only during an active tracking window
         tracker = self.tracker_manager.get_tracker(group_id)
-        if tracker and tracker.alive:
+        if tracker and tracker.alive and now <= tracker.expire_at:
             event.is_at_or_wake_command = False
-
-        now = time.time()
 
         is_bot = False
         try:
