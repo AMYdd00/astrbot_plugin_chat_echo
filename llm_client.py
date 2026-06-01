@@ -151,7 +151,7 @@ class LLMHandler:
                     f"<task_instructions>\n{system_prompt}\n</task_instructions>"
                 )
 
-        self.logger.info(
+        self.logger.debug(
             f"\n[AnalyzerPrompt] === Proactive Analysis LLM Call ===\n"
             f"--- System Prompt ---\n{system_prompt}\n"
             f"--- User Prompt ---\n{prompt}\n"
@@ -225,7 +225,7 @@ class LLMHandler:
                     f"<task_instructions>\n{system_prompt}\n</task_instructions>"
                 )
 
-        self.logger.info(
+        self.logger.debug(
             f"\n[AnalyzerPrompt] === Reply Analysis LLM Call ===\n"
             f"--- System Prompt ---\n{system_prompt}\n"
             f"--- User Prompt ---\n{prompt}\n"
