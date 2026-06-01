@@ -336,8 +336,10 @@ class EchoPlugin(Star):
         if has_other_handlers:
             return
 
-        # Intercept the native wake/at-bot LLM trigger, let the plugin determine if it should respond
-        event.is_at_or_wake_command = False
+        # Intercept the native wake/at-bot LLM trigger only during an active tracking window
+        tracker = self.tracker_manager.get_tracker(group_id)
+        if tracker and tracker.alive:
+            event.is_at_or_wake_command = False
 
         now = time.time()
 
