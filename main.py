@@ -317,14 +317,6 @@ class EchoPlugin(Star):
 
         group_id = str(event.get_group_id())
         umo = event.unified_msg_origin
-
-        activated_handlers = event.get_extra("activated_handlers", [])
-        self.logger.info(
-            f"[ChatEcho Debug] on_group_message: msg='{event.message_str}', is_at_or_wake={event.is_at_or_wake_command}, "
-            f"is_wake={event.is_wake}, stopped={event.is_stopped()}, "
-            f"handlers={[h.handler_name for h in activated_handlers]}"
-        )
-
         if not self.config_helper.is_group_allowed(group_id, umo):
             return
 
@@ -334,14 +326,20 @@ class EchoPlugin(Star):
                 if cmd_text.startswith(prefix):
                     return  # 指令消息，跳过全部处理
 
-        # Check if there are other commands/handlers to avoid intercepting them
+        # Check if there are other COMMAND handlers to avoid intercepting them
         activated_handlers = event.get_extra("activated_handlers", [])
-        has_other_handlers = False
+        has_other_commands = False
         for handler in activated_handlers:
-            if handler.handler_name != "on_group_message":
-                has_other_handlers = True
+            if handler.handler_name == "on_group_message":
+                continue
+            is_cmd = any(
+                f.__class__.__name__ in ("CommandFilter", "CommandGroupFilter")
+                for f in handler.event_filters
+            )
+            if is_cmd:
+                has_other_commands = True
                 break
-        if has_other_handlers:
+        if has_other_commands:
             return
 
         now = time.time()
