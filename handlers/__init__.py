@@ -333,9 +333,13 @@ async def process_group_message(plugin, event: AstrMessageEvent) -> None:
 
             if not plugin.config_helper.batch_analysis_enabled():
                 # ---- Legacy instant analysis ----
-                should_analyze = is_probability_hit(
-                    plugin.config_helper.get_effective_reply_prob(group_id, umo)
-                ) or was_at_or_wake or is_at_bot
+                should_analyze = (
+                    is_probability_hit(
+                        plugin.config_helper.get_effective_reply_prob(group_id, umo)
+                    )
+                    or was_at_or_wake
+                    or is_at_bot
+                )
 
                 if should_analyze:
                     tracker.analyzing = True

@@ -23,7 +23,7 @@ from .utils.caption_cache import ImageCaptionCache
 from .utils.token_counter import TokenCounter
 
 
-@register("astrbot_plugin_chat_echo", "AMYdd00, Yao-lin101", "主动接话插件", "1.1.3")
+@register("astrbot_plugin_chat_echo", "AMYdd00, Yao-lin101", "主动接话插件", "1.2.0")
 class EchoPlugin(Star):
     def __init__(self, context: Context, config=None):
         super().__init__(context)
