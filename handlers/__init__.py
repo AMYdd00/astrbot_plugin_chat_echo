@@ -92,6 +92,8 @@ async def process_group_message(plugin, event: AstrMessageEvent) -> None:
     if not is_group_event(event):
         return
 
+    was_at_or_wake = event.is_at_or_wake_command
+
     group_id = str(event.get_group_id())
     umo = event.unified_msg_origin
     if not plugin.config_helper.is_group_allowed(group_id, umo):
@@ -218,6 +220,7 @@ async def process_group_message(plugin, event: AstrMessageEvent) -> None:
         "time": now,
         "is_at_bot": is_at_bot,
         "is_at_other": is_at_other and not is_at_bot,
+        "is_wake": was_at_or_wake,
     }
 
     # PROACTIVE_WINDOW_SIZE is 10
@@ -259,8 +262,14 @@ async def process_group_message(plugin, event: AstrMessageEvent) -> None:
                 return
 
     # ====== Keyword Trigger (Route 3) ======
+    has_active_tracker = False
+    tracker = plugin.tracker_manager.get_tracker(group_id)
+    if tracker and tracker.alive and now <= tracker.expire_at:
+        has_active_tracker = True
+
     if (
-        plugin.config_helper.enable_keyword_trigger()
+        not has_active_tracker
+        and plugin.config_helper.enable_keyword_trigger()
         and plugin.config_helper.parsed_keywords
     ):
         matched_keyword, matched_prob = plugin.config_helper.get_matched_keyword(
@@ -324,9 +333,11 @@ async def process_group_message(plugin, event: AstrMessageEvent) -> None:
 
             if not plugin.config_helper.batch_analysis_enabled():
                 # ---- Legacy instant analysis ----
-                if is_probability_hit(
+                should_analyze = is_probability_hit(
                     plugin.config_helper.get_effective_reply_prob(group_id, umo)
-                ):
+                ) or was_at_or_wake or is_at_bot
+
+                if should_analyze:
                     tracker.analyzing = True
                     res = await handle_reply(plugin, tracker, event)
                     if res:

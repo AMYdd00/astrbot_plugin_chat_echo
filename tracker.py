@@ -144,13 +144,16 @@ class TrackerManager:
         if len(tracker.batch_buffer) >= plugin.config_helper.max_batch_messages():
             return {"reason": "batch_full", "at": now}
 
-        # Check if @bot triggers instant flush (reply mode only)
+        # Check if @bot or wake command triggers instant flush (reply mode only)
         if (
-            msg.get("is_at_bot")
+            (msg.get("is_at_bot") or msg.get("is_wake"))
             and plugin.config_helper.instant_at_bot()
             and tracker.batch_mode == "reply"
         ):
-            return {"reason": "at_bot", "at": now}
+            return {
+                "reason": "at_bot" if msg.get("is_at_bot") else "wake_prefix",
+                "at": now,
+            }
 
         return None
 
