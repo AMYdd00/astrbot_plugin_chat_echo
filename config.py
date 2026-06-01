@@ -206,6 +206,9 @@ class ConfigHelper:
     def trigger_mode(self) -> str:
         return str(self.cfg("trigger_mode", "llm_response"))
 
+    def filter_prefixes(self) -> list:
+        return self.cfg("filter_prefixes", ["/", "!", "#", "$"])
+
     def enable_keyword_trigger(self) -> bool:
         return bool(self.cfg("enable_keyword_trigger", False))
 
