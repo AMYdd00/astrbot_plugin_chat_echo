@@ -288,6 +288,18 @@ class ConfigHelper:
         """Return the custom per-persona reply prompt list from config."""
         return self.cfg("persona_replies", []) or []
 
+    def get_custom_persona_prompt(self, persona_name: str) -> str:
+        """按人格名查找其专属回复分析提示词（大小写不敏感），找不到返回空串。"""
+        if not persona_name:
+            return ""
+        for entry in self.persona_replies():
+            if (
+                isinstance(entry, dict)
+                and entry.get("persona_name", "").lower() == persona_name.lower()
+            ):
+                return entry.get("custom_persona_prompt", "") or ""
+        return ""
+
     def is_match_group(self, gid: str, group_id: str, umo: str) -> bool:
         if gid == group_id or gid == umo:
             return True
