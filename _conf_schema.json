@@ -9,39 +9,6 @@
       "any_message"
     ]
   },
-  "enabled_groups": {
-    "type": "template_list",
-    "description": "群白名单（按群覆盖概率）",
-    "hint": "为指定群设置独立概率，未设置的群使用全局默认概率。支持直接填群ID或完整UMO（如 Bot:GroupMessage:12345）。留空则所有群使用全局概率。",
-    "default": [],
-    "templates": {
-      "group_template": {
-        "name": "群组配置",
-        "items": {
-          "group_id": {
-            "type": "string",
-            "description": "群ID / UMO",
-            "hint": "群号或完整UMO（如 Bot:GroupMessage:12345），多个用逗号分隔（支持中文逗号）",
-            "default": ""
-          },
-          "reply_probability": {
-            "type": "int",
-            "description": "回复概率(%)",
-            "hint": "留空使用全局回复概率",
-            "default": null,
-            "slider": { "min": 0, "max": 100, "step": 5 }
-          },
-          "active_probability": {
-            "type": "int",
-            "description": "主动概率(%)",
-            "hint": "留空使用全局主动概率",
-            "default": null,
-            "slider": { "min": 0, "max": 100, "step": 5 }
-          }
-        }
-      }
-    }
-  },
   "analyzer_provider_id": {
     "type": "string",
     "description": "分析用 LLM Provider（建议选便宜的模型）",
@@ -78,17 +45,6 @@
       "step": 1
     }
   },
-  "reply_probability": {
-    "type": "int",
-    "description": "回复模式 - 分析命中概率（%）",
-    "hint": "Bot发言后，跟踪窗口内群友消息按此概率分析是否回复Bot。100=每条都分析，50=一半概率，0=从不分析",
-    "default": 100,
-    "slider": {
-      "min": 0,
-      "max": 100,
-      "step": 5
-    }
-  },
   "enable_llm_tools": {
     "type": "bool",
     "description": "回复模式是否启用 LLM 工具/技能",
@@ -102,17 +58,6 @@
     "default": "你是一个群聊对话分析师。请分析以下群聊上下文，判断群友的最新消息是否在和你对话。\n\n判断标准：\n1. 你上一条/上几条消息是你发的，群友紧接着你发言 → 默认是在对话\n2. 消息中提到你的名字或@了你 → 肯定是在对话\n3. 群友在跟别人说话（叫了别人名字、回应非你的消息，或者@了别人、回复了别人）→ 不是在对话\n4. 群友只是发纯语气词/表情且无任何上下文关联 → 不是在对话\n\n注意：如果消息中明确@了其他人，或者回复引用了其他人的消息（而非你），这属于在跟别人说话，判断结果应为不是在对话（\"no\"）。\n\n核心逻辑：你刚说完话就有人接话，正常聊天中就是对方在回应你。但如果对方明确是在和别人互动，则排除。\n宁可误判也不要漏判。\n\n请用以下JSON格式回复（不要包含其他内容）：\n{\n  \"is_reply_to_bot\": \"yes|no\",\n  \"reason\": \"简短的原因说明\"\n}",
     "editor_mode": true,
     "editor_language": "markdown"
-  },
-  "active_probability": {
-    "type": "int",
-    "description": "主动模式 - 参与命中概率（%）",
-    "hint": "Bot没发言时，随机抽取群消息按此概率分析话题并主动参与。0=关闭主动模式，100=每条消息都可能触发分析",
-    "default": 0,
-    "slider": {
-      "min": 0,
-      "max": 100,
-      "step": 5
-    }
   },
   "max_proactive_rounds": {
     "type": "int",
@@ -346,26 +291,15 @@
       "step": 5
     }
   },
-  "typing_delay_min": {
-    "type": "float",
-    "description": "伪人模式 - 打字延迟最小（秒）",
-    "hint": "Bot 发言前的随机延迟下限，模拟人类打字速度",
-    "default": 1.5,
+  "activity_max_delay": {
+    "type": "int",
+    "description": "伪人模式 - 活动度最大延迟（秒）",
+    "hint": "活动度 1.0 时延迟约 1 秒，活动度 0.0 时延迟此值。值越大低活跃时回复越慢。",
+    "default": 10,
     "slider": {
-      "min": 0,
-      "max": 10,
-      "step": 0.5
-    }
-  },
-  "typing_delay_max": {
-    "type": "float",
-    "description": "伪人模式 - 打字延迟最大（秒）",
-    "hint": "Bot 发言前的随机延迟上限，模拟人类打字速度",
-    "default": 4.0,
-    "slider": {
-      "min": 0,
-      "max": 10,
-      "step": 0.5
+      "min": 3,
+      "max": 60,
+      "step": 1
     }
   },
   "persona_replies": {

@@ -1,3 +1,4 @@
+import asyncio
 import json
 import re
 
@@ -65,6 +66,10 @@ class LLMHandler:
                 self.logger.exception(f"Failed to get provider ID: {e}")
                 return None
         if not provider_id:
+            self.logger.warning(
+                "call_llm: no provider_id available — either analyzer_provider_id is empty "
+                "or get_current_chat_provider_id returned nothing"
+            )
             return None
 
         kwargs = {
@@ -75,8 +80,25 @@ class LLMHandler:
         if system_prompt:
             kwargs["system_prompt"] = system_prompt
 
-        resp = await self.context.llm_generate(**kwargs)
+        try:
+            resp = await asyncio.wait_for(
+                self.context.llm_generate(**kwargs), timeout=60
+            )
+        except asyncio.TimeoutError:
+            self.logger.warning(
+                f"call_llm: llm_generate timed out after 60s (provider: {provider_id})"
+            )
+            return None
+        except Exception as e:
+            self.logger.exception(
+                f"call_llm: llm_generate failed (provider: {provider_id}): {e}"
+            )
+            return None
+
         if resp is None:
+            self.logger.warning(
+                f"call_llm: llm_generate returned None (provider: {provider_id})"
+            )
             return None
 
         gid = None
@@ -166,10 +188,14 @@ class LLMHandler:
                 umo=umo,
             )
             if not resp:
+                self.logger.warning("call_proactive_analyzer: llm_generate returned empty response")
                 return None
-            return parse_json_response(resp)
+            result = parse_json_response(resp)
+            if result is None:
+                self.logger.warning(f"call_proactive_analyzer: failed to parse JSON from response: {resp[:200]}")
+            return result
         except Exception as e:
-            self.logger.exception(f"[Proactive] LLM analysis failed: {e}")
+            self.logger.exception(f"call_proactive_analyzer: LLM call failed: {e}")
             return None
 
     async def call_analyzer(
@@ -240,8 +266,12 @@ class LLMHandler:
                 umo=umo,
             )
             if not resp:
+                self.logger.warning("call_analyzer: llm_generate returned empty response")
                 return None
-            return parse_json_response(resp)
+            result = parse_json_response(resp)
+            if result is None:
+                self.logger.warning(f"call_analyzer: failed to parse JSON from response: {resp[:200]}")
+            return result
         except Exception as e:
-            self.logger.exception(f"Analyzer LLM call failed: {e}")
+            self.logger.exception(f"call_analyzer: LLM call failed: {e}")
             return None

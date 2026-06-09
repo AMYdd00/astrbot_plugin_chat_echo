@@ -1,5 +1,21 @@
 # Changelog
 
+## [1.2.2] - 2026-06-09
+
+### 重大变更
+- 🔥 **移除全局概率机制**：删除 `reply_probability` / `active_probability` / `is_probability_hit`，发言判断完全交由 LLM 分析（回复模式 `call_analyzer` / 主动模式 `call_proactive_analyzer`），消除随机数带来的"人机感"
+- 🔥 **活跃度语义调整**：`activity` 从"是否发言的概率"改为"回复延迟快慢"（`delay = max_delay × (1 - activity) + 1`），0.0=睡觉拦截，>0=正常发言仅影响速度
+- 🔥 **移除 `enabled_groups` 白名单**：原功能仅为概率覆盖，概率移除后无实际作用，从 schema、config、README 中彻底清理（净删 -182 行）
+
+### 新增
+- ✨ **伪人模式睡觉/唤醒机制**：睡觉状态（activity=0）可被群友 @ 累计唤醒（默认 3 次 / 30 分钟窗口），模拟"被吵醒"
+- ✨ **回复链路基于活跃度的延迟**：`maybe_typing_delay` 根据当前活跃度计算发送前等待时间，高活跃秒回、低活跃慢回
+
+### 优化
+- 🔧 **版本号统一**：`metadata.yaml` 和 `@register` 装饰器版本号统一为 1.2.2
+- 🔧 **README 大幅更新**：移除所有概率/白名单相关描述，补充伪人模式机制说明
+- 🔧 **代码清理**：移除 `parse_group_entry`、`is_match_group`、`is_group_allowed`、`parsed_groups` 等死代码
+
 ## [1.2.1] - 2026-06-02
 
 ### 修复

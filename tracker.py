@@ -346,6 +346,11 @@ class TrackerManager:
             group_id, {"name": "空闲", "activity": 1.0, "reason": ""}
         )
 
+    def get_current_activity(self, group_id: str) -> float:
+        """Get current activity for a group (0.0-1.0). Default: 1.0."""
+        state = self.get_state(group_id)
+        return float(state.get("activity", 1.0))
+
     def set_state(self, group_id: str, state: dict) -> None:
         self._current_state[group_id] = state
 
