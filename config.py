@@ -74,68 +74,6 @@ def upgrade_config(config, data_dir: Path, logger) -> None:
         logger.exception(f"Failed to upgrade config: {e}")
 
 
-def parse_group_entry(entry) -> list[tuple[str, int | None, int | None]]:
-    """Parse a group whitelist entry. Supports both old string format and new dict format.
-    Returns a list of (group_id, reply_prob, active_prob) tuples (supports comma-separated multi-group).
-    """
-    rp: int | None = None
-    ap: int | None = None
-    gid_str = ""
-
-    # New template_list dict format
-    if isinstance(entry, dict):
-        gid_str = entry.get("group_id", "").strip()
-        rp = entry.get("reply_probability")
-        ap = entry.get("active_probability")
-        if not (isinstance(rp, int) and rp >= 0):
-            rp = None
-        if not (isinstance(ap, int) and ap >= 0):
-            ap = None
-    else:
-        # Old string format: "group_id:reply_prob:active_prob"
-        entry = str(entry).strip()
-        if not entry:
-            return []
-        parts = entry.split(":")
-
-        platforms = {
-            "aiocqhttp",
-            "telegram",
-            "discord",
-            "lark",
-            "qq_official",
-            "dingtalk",
-            "kook",
-            "slack",
-            "mattermost",
-            "satori",
-        }
-        is_umo = False
-        if len(parts) >= 3:
-            if parts[0] in platforms or parts[1] in {
-                "GroupMessage",
-                "PrivateMessage",
-                "GuildMessage",
-            }:
-                is_umo = True
-
-        if is_umo:
-            gid_str = ":".join(parts[:3])
-            if len(parts) >= 4:
-                rp = int(parts[3]) if parts[3].strip().isdigit() else None
-            if len(parts) >= 5:
-                ap = int(parts[4]) if parts[4].strip().isdigit() else None
-        else:
-            gid_str = parts[0]
-            if len(parts) >= 2:
-                rp = int(parts[1]) if parts[1].strip().isdigit() else None
-            if len(parts) >= 3:
-                ap = int(parts[2]) if parts[2].strip().isdigit() else None
-
-    # Split comma-separated group IDs
-    if not gid_str:
-        return []
-    return [(g.strip(), rp, ap) for g in _split_list(gid_str)]
 
 
 def _split_list(value: str | None) -> list[str]:
@@ -179,18 +117,11 @@ class ConfigHelper:
 
     def __init__(self, config):
         self.config = config
-        self.parsed_groups: list[tuple[str, int | None, int | None]] = []
         self.parsed_keywords: list[tuple[list[str], set[str], int | None]] = []
         self.refresh()
 
     def refresh(self):
-        """Re-parse the enabled groups from configuration."""
-        enabled = self.enabled_groups()
-        self.parsed_groups = []
-        for entry in enabled:
-            if _is_valid_entry(entry):
-                self.parsed_groups.extend(parse_group_entry(entry))
-
+        """Re-parse the keywords from configuration."""
         keywords = self.keyword_rules()
         self.parsed_keywords = [
             parse_keyword_rule(entry) for entry in keywords if _is_valid_entry(entry)
@@ -229,7 +160,6 @@ class ConfigHelper:
         """
         content_lower = content.lower()
         for keywords, groups, prob in self.parsed_keywords:
-            # Check group filter: support group_id, UMO, and UMO suffix matching
             if groups and not self._match_group_set(groups, group_id):
                 continue
             for kw in keywords:
@@ -238,13 +168,9 @@ class ConfigHelper:
         return None, None
 
     def _match_group_set(self, groups: set[str], group_id: str) -> bool:
-        """Check if group_id matches any entry in the groups set.
-        Supports direct group_id match and UMO suffix match (e.g., Bot:GroupMessage:123).
-        """
         for g in groups:
             if g == group_id:
                 return True
-            # UMO suffix match: the last segment after the last ':' equals group_id
             try:
                 if ":" in g and g.rsplit(":", 1)[-1] == group_id:
                     return True
@@ -257,15 +183,6 @@ class ConfigHelper:
 
     def max_detection_count(self) -> int:
         return int(self.cfg("max_detection_count", 10))
-
-    def reply_probability(self) -> int:
-        return int(self.cfg("reply_probability", 100))
-
-    def active_probability(self) -> int:
-        return int(self.cfg("active_probability", 0))
-
-    def enabled_groups(self) -> list:
-        return self.cfg("enabled_groups", [])
 
     def max_rounds(self) -> int:
         return int(self.cfg("max_proactive_rounds", 3))
@@ -300,11 +217,9 @@ class ConfigHelper:
         return raw.strip() or DEFAULT_PROACTIVE_ANALYZER_PROMPT
 
     def persona_replies(self) -> list:
-        """Return the custom per-persona reply prompt list from config."""
         return self.cfg("persona_replies", []) or []
 
     def get_custom_persona_prompt(self, persona_name: str) -> str:
-        """按人格名查找其专属回复分析提示词（大小写不敏感），找不到返回空串。"""
         if not persona_name:
             return ""
         for entry in self.persona_replies():
@@ -315,41 +230,6 @@ class ConfigHelper:
                 return entry.get("custom_persona_prompt", "") or ""
         return ""
 
-    def is_match_group(self, gid: str, group_id: str, umo: str) -> bool:
-        if gid == group_id or gid == umo:
-            return True
-        try:
-            if gid == umo.rsplit(":", 1)[-1]:
-                return True
-        except (AttributeError, IndexError, ValueError):
-            pass
-        return False
-
-    def is_group_allowed(self, group_id: str, umo: str) -> bool:
-        return True  # 白名单仅控制概率覆盖，不做硬拦截
-
-    def get_group_probability(
-        self, group_id: str, umo: str
-    ) -> tuple[int | None, int | None]:
-        if not self.parsed_groups:
-            return None, None
-        for gid, reply_p, active_p in self.parsed_groups:
-            if self.is_match_group(gid, group_id, umo):
-                return reply_p, active_p
-        return None, None
-
-    def get_effective_reply_prob(self, group_id: str, umo: str) -> int:
-        gp, _ = self.get_group_probability(group_id, umo)
-        if gp is not None:
-            return gp
-        return self.reply_probability()
-
-    def get_effective_active_prob(self, group_id: str, umo: str) -> int:
-        _, ap = self.get_group_probability(group_id, umo)
-        if ap is not None:
-            return ap
-        return self.active_probability()
-
     def human_like_mode(self) -> bool:
         return bool(self.cfg("human_like_mode", False))
 
@@ -359,11 +239,8 @@ class ConfigHelper:
     def wake_window_minutes(self) -> int:
         return int(self.cfg("wake_window_minutes", 30))
 
-    def typing_delay_min(self) -> float:
-        return float(self.cfg("typing_delay_min", 1.5))
-
-    def typing_delay_max(self) -> float:
-        return float(self.cfg("typing_delay_max", 4.0))
+    def activity_max_delay(self) -> float:
+        return float(self.cfg("activity_max_delay", 10.0))
 
     # ======== Batch analysis config ========
 

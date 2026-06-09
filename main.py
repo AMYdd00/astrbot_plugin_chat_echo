@@ -23,7 +23,7 @@ from .utils.caption_cache import ImageCaptionCache
 from .utils.token_counter import TokenCounter
 
 
-@register("astrbot_plugin_chat_echo", "AMYdd00, Yao-lin101", "主动接话插件", "1.2.0")
+@register("astrbot_plugin_chat_echo", "AMYdd00, Yao-lin101", "主动接话插件", "1.2.1")
 class EchoPlugin(Star):
     def __init__(self, context: Context, config=None):
         super().__init__(context)
@@ -63,8 +63,6 @@ class EchoPlugin(Star):
             return
         group_id = str(event.get_group_id())
         umo = event.unified_msg_origin
-        if not self.config_helper.is_group_allowed(group_id, umo):
-            return
         if self.tracker_manager.is_proactive_flagged(group_id):
             return
 
@@ -184,8 +182,6 @@ class EchoPlugin(Star):
             return
         group_id = str(event.get_group_id())
         umo = event.unified_msg_origin
-        if not self.config_helper.is_group_allowed(group_id, umo):
-            return
         if self.tracker_manager.is_proactive_flagged(group_id):
             return
         if self.config_helper.trigger_mode() != "any_message":

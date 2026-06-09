@@ -7,7 +7,6 @@ from astrbot.api.message_components import At, Reply
 from ..helpers import (
     extract_image_urls,
     is_group_event,
-    is_probability_hit,
     maybe_typing_delay,
 )
 from ..services.image_caption import (
@@ -341,34 +340,29 @@ async def process_group_message(plugin, event: AstrMessageEvent) -> None:
             plugin.logger.info(
                 f"[Keyword] Matched keyword '{matched_keyword}' in group {group_id}, matched_prob={matched_prob}%."
             )
-            if is_probability_hit(matched_prob):
-                if not (
-                    plugin.tracker_manager.is_active_thinking(group_id)
-                    or plugin.tracker_manager.is_proactive_flagged(group_id)
-                ):
-                    plugin.tracker_manager.set_active_thinking(group_id, True)
-                    try:
-                        res = await handle_keyword(
-                            plugin, event, msg, window, matched_keyword
+            if not (
+                plugin.tracker_manager.is_active_thinking(group_id)
+                or plugin.tracker_manager.is_proactive_flagged(group_id)
+            ):
+                plugin.tracker_manager.set_active_thinking(group_id, True)
+                try:
+                    res = await handle_keyword(
+                        plugin, event, msg, window, matched_keyword
+                    )
+                    if res:
+                        event.is_at_or_wake_command = True
+                        event.set_extra("chat_echo_triggered", True)
+                        event.set_extra("chat_echo_mode", "keyword")
+                        event.set_extra(
+                            "chat_echo_matched_keyword", matched_keyword
                         )
-                        if res:
-                            event.is_at_or_wake_command = True
-                            event.set_extra("chat_echo_triggered", True)
-                            event.set_extra("chat_echo_mode", "keyword")
-                            event.set_extra(
-                                "chat_echo_matched_keyword", matched_keyword
-                            )
-                            event.set_extra(
-                                "selected_provider",
-                                plugin.config_helper.generator_provider(),
-                            )
-                            return
-                    finally:
-                        plugin.tracker_manager.set_active_thinking(group_id, False)
-            else:
-                plugin.logger.info(
-                    f"[Keyword] Keyword '{matched_keyword}' matched but probability roll missed."
-                )
+                        event.set_extra(
+                            "selected_provider",
+                            plugin.config_helper.generator_provider(),
+                        )
+                        return
+                finally:
+                    plugin.tracker_manager.set_active_thinking(group_id, False)
 
     # ====== Reply Mode (Route 1) - Batch or Instant ======
     tracker = plugin.tracker_manager.get_tracker(group_id)
@@ -392,13 +386,7 @@ async def process_group_message(plugin, event: AstrMessageEvent) -> None:
 
             if not plugin.config_helper.batch_analysis_enabled():
                 # ---- Legacy instant analysis ----
-                should_analyze = (
-                    is_probability_hit(
-                        plugin.config_helper.get_effective_reply_prob(group_id, umo)
-                    )
-                    or was_at_or_wake
-                    or is_at_bot
-                )
+                should_analyze = was_at_or_wake or is_at_bot
 
                 if should_analyze:
                     tracker.analyzing = True
@@ -455,9 +443,6 @@ async def process_group_message(plugin, event: AstrMessageEvent) -> None:
         group_id
     ) or plugin.tracker_manager.is_proactive_flagged(group_id):
         return
-    active_prob = plugin.config_helper.get_effective_active_prob(group_id, umo)
-    if active_prob <= 0:
-        return
     last_active = plugin.tracker_manager.get_active_cooldown(group_id)
     if now - last_active < plugin.config_helper.proactive_cooldown():
         return
@@ -465,9 +450,6 @@ async def process_group_message(plugin, event: AstrMessageEvent) -> None:
     if rounds >= plugin.config_helper.max_rounds():
         return
     if plugin.tracker_manager.has_active_tracker(group_id):
-        return
-
-    if not is_probability_hit(active_prob):
         return
 
     if not plugin.config_helper.batch_analysis_enabled():
