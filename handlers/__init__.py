@@ -154,8 +154,6 @@ async def process_group_message(plugin, event: AstrMessageEvent) -> None:
 
     group_id = str(event.get_group_id())
     umo = event.unified_msg_origin
-    if not plugin.config_helper.is_group_allowed(group_id, umo):
-        return
 
     cmd_text = (event.message_str or "").strip()
     if cmd_text:
