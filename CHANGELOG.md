@@ -1,6 +1,10 @@
 # Changelog
 
-## [1.2.2] - 2026-06-09
+## [1.2.2] - 2026-06-10
+
+### 修复
+- 🐛 **修复关键词触发导致双重回复**：关键词命中后 `on_llm_response` 不再开启 reply tracking，避免同一条消息被关键词和 reply 批次双重处理产生两条相似回复
+- 🐛 修复移除 `is_group_allowed` 后 `handlers/__init__.py` 中残留调用导致 `AttributeError` 崩溃
 
 ### 重大变更
 - 🔥 **移除全局概率机制**：删除 `reply_probability` / `active_probability` / `is_probability_hit`，发言判断完全交由 LLM 分析（回复模式 `call_analyzer` / 主动模式 `call_proactive_analyzer`），消除随机数带来的"人机感"
