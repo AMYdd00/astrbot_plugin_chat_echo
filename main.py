@@ -71,6 +71,9 @@ class EchoPlugin(Star):
 
         if chat_echo_triggered:
             self.tracker_manager.set_active_thinking(group_id, False)
+            mode = event.get_extra("chat_echo_mode")
+            if mode == "keyword":
+                return
             tracker = self.tracker_manager.get_tracker(group_id)
             if tracker and tracker.alive:
                 tracker.collected.append(
