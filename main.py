@@ -73,6 +73,24 @@ class EchoPlugin(Star):
             self.tracker_manager.set_active_thinking(group_id, False)
             mode = event.get_extra("chat_echo_mode")
             if mode == "keyword":
+                # 关键词触发：仅添加 bot 回复并重置计数，不清除 tracker
+                # 后续群友消息正常进入 batch 分析
+                tracker = self.tracker_manager.get_tracker(group_id)
+                if tracker and tracker.alive:
+                    tracker.collected.append(
+                        {
+                            "user_name": "你",
+                            "user_id": "bot",
+                            "content": bot_text,
+                            "image_urls": [],
+                            "time": time.time(),
+                            "is_at_bot": False,
+                        }
+                    )
+                    tracker.detection_count = 0
+                    tracker.expire_at = time.time() + self.config_helper.track_timeout()
+                    # 清空关键词触发时的旧 batch buffer，避免二次分析
+                    self.tracker_manager.clear_batch_state(tracker)
                 return
             tracker = self.tracker_manager.get_tracker(group_id)
             if tracker and tracker.alive:
