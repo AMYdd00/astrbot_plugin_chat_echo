@@ -359,6 +359,9 @@ class ConfigHelper:
     def wake_window_minutes(self) -> int:
         return int(self.cfg("wake_window_minutes", 30))
 
+    def activity_max_delay(self) -> float:
+        return float(self.cfg("activity_max_delay", 10.0))
+
     def typing_delay_min(self) -> float:
         return float(self.cfg("typing_delay_min", 1.5))
 

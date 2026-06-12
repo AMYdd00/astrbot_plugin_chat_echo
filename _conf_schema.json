@@ -346,26 +346,15 @@
       "step": 5
     }
   },
-  "typing_delay_min": {
-    "type": "float",
-    "description": "伪人模式 - 打字延迟最小（秒）",
-    "hint": "Bot 发言前的随机延迟下限，模拟人类打字速度",
-    "default": 1.5,
+  "activity_max_delay": {
+    "type": "int",
+    "description": "伪人模式 - 活跃度最大延迟（秒）",
+    "hint": "活跃度 1.0 时延迟约 1 秒，活跃度越低回复越慢。活跃度控制回复快慢，不影响是否发言。",
+    "default": 10,
     "slider": {
-      "min": 0,
-      "max": 10,
-      "step": 0.5
-    }
-  },
-  "typing_delay_max": {
-    "type": "float",
-    "description": "伪人模式 - 打字延迟最大（秒）",
-    "hint": "Bot 发言前的随机延迟上限，模拟人类打字速度",
-    "default": 4.0,
-    "slider": {
-      "min": 0,
-      "max": 10,
-      "step": 0.5
+      "min": 3,
+      "max": 60,
+      "step": 1
     }
   },
   "persona_replies": {

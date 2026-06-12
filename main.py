@@ -23,7 +23,7 @@ from .utils.caption_cache import ImageCaptionCache
 from .utils.token_counter import TokenCounter
 
 
-@register("astrbot_plugin_chat_echo", "AMYdd00, Yao-lin101", "主动接话插件", "1.2.0")
+@register("astrbot_plugin_chat_echo", "AMYdd00, Yao-lin101", "主动接话插件", "1.2.2")
 class EchoPlugin(Star):
     def __init__(self, context: Context, config=None):
         super().__init__(context)
@@ -73,6 +73,25 @@ class EchoPlugin(Star):
 
         if chat_echo_triggered:
             self.tracker_manager.set_active_thinking(group_id, False)
+            mode = event.get_extra("chat_echo_mode")
+            if mode == "keyword":
+                # 关键词触发：保留 tracker，添加 bot 回复，清空旧 batch buffer 防二次分析
+                tracker = self.tracker_manager.get_tracker(group_id)
+                if tracker and tracker.alive:
+                    tracker.collected.append(
+                        {
+                            "user_name": "你",
+                            "user_id": "bot",
+                            "content": bot_text,
+                            "image_urls": [],
+                            "time": time.time(),
+                            "is_at_bot": False,
+                        }
+                    )
+                    tracker.detection_count = 0
+                    tracker.expire_at = time.time() + self.config_helper.track_timeout()
+                    self.tracker_manager.clear_batch_state(tracker)
+                return
             tracker = self.tracker_manager.get_tracker(group_id)
             if tracker and tracker.alive:
                 tracker.collected.append(

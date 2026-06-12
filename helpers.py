@@ -140,10 +140,16 @@ async def compress_image_if_needed(image_url: str) -> str:
         return local_path if (local_path and os.path.exists(local_path)) else image_url
 
 
-async def maybe_typing_delay(plugin) -> None:
-    """Apply random typing delay if human_like_mode is enabled."""
-    if plugin.config_helper.human_like_mode():
-        d_min = plugin.config_helper.typing_delay_min()
-        d_max = plugin.config_helper.typing_delay_max()
-        if d_max > 0:
-            await asyncio.sleep(random.uniform(d_min, d_max))
+async def maybe_typing_delay(plugin, group_id: str = "", activity: float = None) -> None:
+    """Apply activity-driven delay. High activity = fast reply, low activity = slow.
+    If human_like_mode is off, returns immediately (no delay)."""
+    if not plugin.config_helper.human_like_mode():
+        return
+    if activity is None and group_id:
+        activity = plugin.tracker_manager.get_current_activity(group_id)
+    if activity is None:
+        activity = 1.0
+    activity = max(0.0, min(1.0, activity))
+    max_delay = plugin.config_helper.activity_max_delay()
+    delay = max_delay * (1.0 - activity) + 1.0
+    await asyncio.sleep(delay)
