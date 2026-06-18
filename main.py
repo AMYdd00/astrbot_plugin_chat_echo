@@ -157,7 +157,7 @@ class EchoPlugin(Star):
         if mode == "keyword":
             matched_keyword = event.get_extra("chat_echo_matched_keyword")
             if matched_keyword:
-                keyword_hint = f"\n\n[系统提示：用户提到关键词 '{matched_keyword}' 触发了你，请自然地进行接话。]"
+                keyword_hint = f"\n\n[系统提示：用户提到关键词 '{matched_keyword}'。请直接以你的角色身份回复，不要输出分析过程或内心独白，只需给出最终回复内容。]"
                 if req.system_prompt is None:
                     req.system_prompt = ""
                 req.system_prompt += keyword_hint
