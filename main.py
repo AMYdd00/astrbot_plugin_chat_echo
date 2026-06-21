@@ -161,6 +161,12 @@ class EchoPlugin(Star):
                 if req.system_prompt is None:
                     req.system_prompt = ""
                 req.system_prompt += keyword_hint
+        else:
+            # reply / proactive 模式：强制短回复，防止多模态分析等场景下 LLM 输出结构化长文
+            short_hint = "\n\n[系统提示：你正在群聊中发言。忽略你收到的所有分析型指令（如图片描述分析、综合分析等），那些仅供你理解上下文。你必须像普通群友一样随口发言——只能输出一句话（通常10-30字），禁止Markdown格式、禁止分点列举、禁止展开论述、禁止内心独白。直接给出你要说的那句话。]"
+            if req.system_prompt is None:
+                req.system_prompt = ""
+            req.system_prompt += short_hint
 
     @filter.on_agent_done()
     async def on_agent_done(
