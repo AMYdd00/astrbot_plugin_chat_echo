@@ -148,19 +148,26 @@ class EchoPlugin(Star):
 
         if injected_contexts:
             event.set_extra("chat_echo_original_contexts", req.contexts)
-            req.contexts = injected_contexts
+            # 插入到现有上下文之前，而非替换，保留 AstrBot 原生 pipeline 构造的完整上下文
+            req.contexts = injected_contexts + req.contexts
             self.logger.debug(
-                f"[ChatEcho] Overwrote LLM contexts with {len(injected_contexts)} tracked group messages."
+                f"[ChatEcho] Prepended {len(injected_contexts)} tracked group messages to LLM contexts."
             )
 
         mode = event.get_extra("chat_echo_mode")
         if mode == "keyword":
             matched_keyword = event.get_extra("chat_echo_matched_keyword")
             if matched_keyword:
-                keyword_hint = f"\n\n[系统提示：用户提到关键词 '{matched_keyword}' 触发了你，请自然地进行接话。]"
+                keyword_hint = f"\n\n[系统提示：用户提到关键词 '{matched_keyword}'。请直接以你的角色身份回复，不要输出分析过程或内心独白，只需给出最终回复内容。]"
                 if req.system_prompt is None:
                     req.system_prompt = ""
                 req.system_prompt += keyword_hint
+        else:
+            # reply / proactive 模式：提醒 LLM 收到的上下文分析结果仅供理解，不要照搬格式
+            short_hint = "\n\n[系统提示：你刚才收到了一些仅供理解上下文的辅助信息（如图片描述）。忽略那些信息的分析格式，你仍然是你，按你的性格随口接一句话——和平时一样短，禁止分析式回复。]"
+            if req.system_prompt is None:
+                req.system_prompt = ""
+            req.system_prompt += short_hint
 
     @filter.on_agent_done()
     async def on_agent_done(
