@@ -1,7 +1,8 @@
 import asyncio
 import os
+import random
 
-from ..helpers import compress_image_if_needed, is_probability_hit
+from ..helpers import compress_image_if_needed
 
 
 async def get_image_caption(
@@ -18,9 +19,7 @@ async def get_image_caption(
         return cached
 
     # Check probability for new image captioning
-    if not force and not is_probability_hit(
-        plugin.config_helper.image_caption_probability()
-    ):
+    if not force and random.randint(1, 100) > plugin.config_helper.image_caption_probability():
         plugin.logger.info(
             f"[ImageCache] Cache miss for image {image_url[:60]}..., but skipped captioning due to probability constraint ({plugin.config_helper.image_caption_probability()}%)."
         )

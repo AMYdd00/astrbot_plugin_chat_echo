@@ -63,8 +63,6 @@ class EchoPlugin(Star):
             return
         group_id = str(event.get_group_id())
         umo = event.unified_msg_origin
-        if not self.config_helper.is_group_allowed(group_id, umo):
-            return
         if self.tracker_manager.is_proactive_flagged(group_id):
             return
 
@@ -75,7 +73,8 @@ class EchoPlugin(Star):
             self.tracker_manager.set_active_thinking(group_id, False)
             mode = event.get_extra("chat_echo_mode")
             if mode == "keyword":
-                # 关键词触发：保留 tracker，添加 bot 回复，清空旧 batch buffer 防二次分析
+                # 关键词触发：仅添加 bot 回复并重置计数，不清除 tracker
+                # 后续群友消息正常进入 batch 分析
                 tracker = self.tracker_manager.get_tracker(group_id)
                 if tracker and tracker.alive:
                     tracker.collected.append(
@@ -90,6 +89,7 @@ class EchoPlugin(Star):
                     )
                     tracker.detection_count = 0
                     tracker.expire_at = time.time() + self.config_helper.track_timeout()
+                    # 清空关键词触发时的旧 batch buffer，避免二次分析
                     self.tracker_manager.clear_batch_state(tracker)
                 return
             tracker = self.tracker_manager.get_tracker(group_id)
@@ -210,8 +210,6 @@ class EchoPlugin(Star):
             return
         group_id = str(event.get_group_id())
         umo = event.unified_msg_origin
-        if not self.config_helper.is_group_allowed(group_id, umo):
-            return
         if self.tracker_manager.is_proactive_flagged(group_id):
             return
         if self.config_helper.trigger_mode() != "any_message":

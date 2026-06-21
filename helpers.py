@@ -1,5 +1,4 @@
 import asyncio
-import random
 
 from astrbot.api.event import AstrMessageEvent
 from astrbot.api.message_components import Image as ImageComponent
@@ -59,11 +58,6 @@ def extract_sent_text(event: AstrMessageEvent) -> str:
     except Exception:
         pass
     return bot_text
-
-
-def is_probability_hit(prob: int) -> bool:
-    """Determine if a random check falls within the specified probability."""
-    return prob >= 100 or random.randint(1, 100) <= prob
 
 
 async def compress_image_if_needed(image_url: str) -> str:

@@ -92,7 +92,7 @@ async def handle_proactive(
             plugin.logger.info(
                 f"[Proactive] Group {group_id} reached max rounds limit."
             )
-        await maybe_typing_delay(plugin)
+        await maybe_typing_delay(plugin, group_id)
         return True
 
     except Exception as e:
@@ -167,7 +167,7 @@ async def handle_proactive_batch(
             plugin.logger.info(
                 f"[ProactiveBatch] Group {group_id} reached max rounds limit."
             )
-        await maybe_typing_delay(plugin)
+        await maybe_typing_delay(plugin, group_id)
         return True
 
     except Exception as e:

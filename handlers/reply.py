@@ -121,7 +121,7 @@ async def handle_reply(
             f"[Reply] Group {group_id} is replying to Bot | Reason: {reason}"
         )
         tracker.detection_count = 0
-        await maybe_typing_delay(plugin)
+        await maybe_typing_delay(plugin, group_id)
         return True
 
     except Exception as e:
@@ -195,7 +195,7 @@ async def handle_reply_batch(
             f"[ReplyBatch] Group {group_id} batch is replying to Bot | Reason: {reason}"
         )
         tracker.detection_count = 0
-        await maybe_typing_delay(plugin)
+        await maybe_typing_delay(plugin, group_id)
         return True
 
     except Exception as e:
