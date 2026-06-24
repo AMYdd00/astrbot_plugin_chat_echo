@@ -179,11 +179,6 @@ async def process_group_message(plugin, event: AstrMessageEvent) -> None:
 
     now = time.time()
 
-    # Intercept the native wake/at-bot LLM trigger only during an active tracking window
-    tracker = plugin.tracker_manager.get_tracker(group_id)
-    if tracker and tracker.alive and now <= tracker.expire_at:
-        event.is_at_or_wake_command = False
-
     is_bot = False
     try:
         self_id = event.get_self_id()
@@ -362,6 +357,12 @@ async def process_group_message(plugin, event: AstrMessageEvent) -> None:
                 finally:
                     plugin.tracker_manager.set_active_thinking(group_id, False)
 
+    # ====== Intercept native reply only for non-@bot non-wake messages during active tracking ======
+    tracker = plugin.tracker_manager.get_tracker(group_id)
+    if tracker and tracker.alive and now <= tracker.expire_at:
+        if not was_at_or_wake and not is_at_bot:
+            event.is_at_or_wake_command = False
+
     # ====== Reply Mode (Route 1) - Batch or Instant ======
     tracker = plugin.tracker_manager.get_tracker(group_id)
     if tracker and tracker.alive:
@@ -407,9 +408,24 @@ async def process_group_message(plugin, event: AstrMessageEvent) -> None:
             trigger_now = plugin.tracker_manager.add_to_batch(tracker, msg, plugin)
 
             if trigger_now:
-                # Immediate flush: @bot or batch full
+                reason = trigger_now.get("reason", "")
+                if reason in ("at_bot", "wake_prefix"):
+                    # @bot / wake: let AstrBot native pipeline handle it directly, no analyzer needed
+                    plugin.logger.info(
+                        f"[Batch] @bot / wake detected in group {group_id}, letting native pipeline handle"
+                    )
+                    event.is_at_or_wake_command = True
+                    event.set_extra("chat_echo_triggered", True)
+                    event.set_extra("chat_echo_mode", "reply")
+                    event.set_extra(
+                        "selected_provider", plugin.config_helper.generator_provider()
+                    )
+                    plugin.tracker_manager.set_active_thinking(group_id, True)
+                    plugin.tracker_manager.clear_batch_state(tracker)
+                    return
+                # Immediate flush: batch full (only case left)
                 plugin.logger.info(
-                    f"[Batch] Immediate flush triggered by {trigger_now['reason']} in group {group_id}"
+                    f"[Batch] Immediate flush triggered by {reason} in group {group_id}"
                 )
                 await flush_batch_reply(plugin, tracker, event, group_id, umo)
                 return
